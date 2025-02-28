@@ -17,15 +17,15 @@ class Database:
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 UID INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL,
-                password TEXT NOT NULL
+                UIDENTITY TEXT NOT NULL,
+                UPD TEXT NOT NULL
             )
         ''')
         self.conn.commit()
 
-    def add_user(self, role, password):
+    def add_user(self, identity, password):
         # 添加用户
-        self.cursor.execute("INSERT INTO users (role, password) VALUES (?, ?)", (role, password))
+        self.cursor.execute("INSERT INTO users (UINDENTITY, UPD) VALUES (?, ?)", (identity, password))
         self.conn.commit()
 
     def get_user(self, uid):
@@ -33,9 +33,9 @@ class Database:
         self.cursor.execute("SELECT * FROM users WHERE UID = ?", (uid,))
         return self.cursor.fetchone()
 
-    def get_user_by_role_and_password(self, role, password):
+    def get_user_by_role_and_password(self, uid, identity, password):
         # 根据身份和密码获取用户信息
-        self.cursor.execute("SELECT * FROM users WHERE role = ? AND password = ?", (role, password))
+        self.cursor.execute("SELECT * FROM users WHERE UID = ? AND UIDENTITY = ? AND UPD = ?", (uid,identity, password))
         return self.cursor.fetchone()
 
     def close(self):
