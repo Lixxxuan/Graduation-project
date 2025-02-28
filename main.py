@@ -3,6 +3,7 @@ import sqlite3
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit, QMessageBox, QFileDialog
 )
+from ultralytics import YOLO
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
@@ -46,6 +47,12 @@ class Database:
 # 模拟一个训练好的模型（实际使用时替换为你的模型）
 class DummyModel:
     def predict(self, image_path):
+        model = YOLO(model='./best.pt')
+        model.predict(source=image_path,
+                      conf=0.1,
+                      save=True,
+                      show=False,
+                      )
         return "This is a dummy prediction result for image: " + image_path
 
 # 登录页面
@@ -223,6 +230,7 @@ class PredictionPage(QWidget):
             self.image_label.setPixmap(pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio))
             prediction = self.model.predict(file_path)
             self.result_label.setText(f"预测结果：{prediction}")
+
 
 # 主窗口
 class MainWindow(QMainWindow):
