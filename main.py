@@ -8,39 +8,51 @@ from PyQt6.QtGui import QPixmap
 
 class Database:
     def __init__(self, db_name):
-        self.conn = sqlite3.connect(db_name)
-        self.cursor = self.conn.cursor()
+        try:
+            self.conn = sqlite3.connect(db_name)
+            self.cursor = self.conn.cursor()
+            print("数据库连接成功")
+        except sqlite3.Error as e:
+            print("数据库连接失败：", e)
 
     def add_user(self, name, identity, password):
-        # 添加用户
-        self.cursor.execute("INSERT INTO users (UNAME, UIDENTITY, UPD) VALUES (?, ?, ?)", (name, identity, password))
-        self.conn.commit()
+        try:
+            self.cursor.execute("INSERT INTO user (UNAME, UIDENTITY, UPD) VALUES (?, ?, ?)", (name, identity, password))
+            self.conn.commit()
+            print("用户添加成功")
+        except sqlite3.Error as e:
+            print("用户添加失败：", e)
 
     def get_user(self, uid):
-        # 根据 UID 获取用户信息
-        self.cursor.execute("SELECT * FROM users WHERE UID = ?", (uid,))
-        return self.cursor.fetchone()
+        try:
+            self.cursor.execute("SELECT * FROM user WHERE UID = ?", (uid,))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print("查询用户失败：", e)
+            return None
 
     def get_user_by_role_and_password(self, uid, name, identity, password):
-        # 根据身份和密码获取用户信息
-        self.cursor.execute("SELECT * FROM users WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?", (uid, name, identity, password))
-        return self.cursor.fetchone()
+        try:
+            self.cursor.execute("SELECT * FROM user WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?", (uid, name, identity, password))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print("查询用户失败：", e)
+            return None
 
     def close(self):
-        # 关闭数据库连接
         self.conn.close()
+        print("数据库连接关闭")
 
 # 模拟一个训练好的模型（实际使用时替换为你的模型）
 class DummyModel:
     def predict(self, image_path):
-        # 这里模拟一个预测结果
         return "This is a dummy prediction result for image: " + image_path
 
 # 登录页面
 class LoginPage(QWidget):
-    def __init__(self, db):  # 接受 db 参数
+    def __init__(self, db):
         super().__init__()
-        self.db = db  # 将 db 保存为实例变量
+        self.db = db
         self.initUI()
 
     def initUI(self):
@@ -55,7 +67,7 @@ class LoginPage(QWidget):
 
         # 身份选择
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["管理员", "用户"])
+        self.role_combo.addItems(["Administrator", "User"])
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
 
@@ -92,7 +104,7 @@ class LoginPage(QWidget):
 
     def on_login(self):
         uid = self.uid_input.text()
-        name = self.name_imput.text()
+        name = self.name_input.text()
         password = self.password_input.text()
         identity = self.role_combo.currentText()
 
@@ -100,24 +112,24 @@ class LoginPage(QWidget):
             QMessageBox.warning(self, "登录失败", "UID 或密码不能为空！")
             return
 
-        # 检查用户是否存在
-        user = self.db.get_user_by_role_and_password(uid, name, identity, password)
-        if user:  # 检查用户是否存在
-            QMessageBox.information(self, "登录成功", f"欢迎 {identity} {uid}！")
-            self.open_prediction_page()
-        else:
-            QMessageBox.warning(self, "登录失败", "UID 或密码错误！")
+        try:
+            user = self.db.get_user_by_role_and_password(uid, name, identity, password)
+            if user:
+                QMessageBox.information(self, "登录成功", f"欢迎 {identity} {uid}！")
+                self.open_prediction_page()
+            else:
+                QMessageBox.warning(self, "登录失败", "UID 或密码错误！")
+        except Exception as e:
+            print("登录出错：", e)
 
     def on_register(self):
-        # 打开注册页面
         self.register_page = RegisterPage(self.db)
         self.register_page.show()
 
     def open_prediction_page(self):
-        # 打开预测页面
         self.prediction_page = PredictionPage()
         self.prediction_page.show()
-        self.close()
+        self.hide()
 
 # 注册页面
 class RegisterPage(QWidget):
@@ -138,6 +150,12 @@ class RegisterPage(QWidget):
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
 
+        # 名称输入
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("请输入用户名")
+        layout.addWidget(QLabel("用户名称："))
+        layout.addWidget(self.name_input)
+
         # 密码输入
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("请输入密码")
@@ -154,23 +172,26 @@ class RegisterPage(QWidget):
 
     def on_register(self):
         identity = self.role_combo.currentText()
+        name = self.name_input.text()
         password = self.password_input.text()
 
-        if not password:
-            QMessageBox.warning(self, "注册失败", "密码不能为空！")
+        if not name or not password:
+            QMessageBox.warning(self, "注册失败", "用户名和密码不能为空！")
             return
 
-        # 添加用户到数据库
-        self.db.add_user(identity, password)
-        QMessageBox.information(self, "注册成功", "用户注册成功！")
-        self.close()
+        try:
+            self.db.add_user(name, identity, password)
+            QMessageBox.information(self, "注册成功", "用户注册成功！")
+            self.close()
+        except Exception as e:
+            print("注册出错：", e)
 
 # 预测页面
 class PredictionPage(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
-        self.model = DummyModel()  # 模拟的模型
+        self.model = DummyModel()
 
     def initUI(self):
         self.setWindowTitle("预测页面")
@@ -196,34 +217,30 @@ class PredictionPage(QWidget):
         self.setLayout(layout)
 
     def on_upload(self):
-        # 打开文件对话框选择图片
         file_path, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
-            # 显示图片
             pixmap = QPixmap(file_path)
             self.image_label.setPixmap(pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio))
-
-            # 调用模型进行预测
             prediction = self.model.predict(file_path)
             self.result_label.setText(f"预测结果：{prediction}")
 
 # 主窗口
 class MainWindow(QMainWindow):
-    def __init__(self, db):  # 接受 db 参数
+    def __init__(self, db):
         super().__init__()
         self.setWindowTitle("系统登录")
         self.setGeometry(100, 100, 400, 300)
         self.db = db
 
         # 设置登录页面为主页面
-        self.login_page = LoginPage(self.db)  # 将 db 传递给 LoginPage
+        self.login_page = LoginPage(self.db)
         self.setCentralWidget(self.login_page)
 
 # 运行程序
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # 初始化数据库（使用现有的数据库文件）
+    # 初始化数据库
     db = Database("database.db")
 
     # 创建主窗口
