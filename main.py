@@ -10,22 +10,10 @@ class Database:
     def __init__(self, db_name):
         self.conn = sqlite3.connect(db_name)
         self.cursor = self.conn.cursor()
-        self.create_table()
 
-    def create_table(self):
-        # 创建用户表
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                UID INTEGER PRIMARY KEY AUTOINCREMENT,
-                UIDENTITY TEXT NOT NULL,
-                UPD TEXT NOT NULL
-            )
-        ''')
-        self.conn.commit()
-
-    def add_user(self, identity, password):
+    def add_user(self, name, identity, password):
         # 添加用户
-        self.cursor.execute("INSERT INTO users (UINDENTITY, UPD) VALUES (?, ?)", (identity, password))
+        self.cursor.execute("INSERT INTO users (UNAME, UIDENTITY, UPD) VALUES (?, ?, ?)", (name, identity, password))
         self.conn.commit()
 
     def get_user(self, uid):
@@ -33,9 +21,9 @@ class Database:
         self.cursor.execute("SELECT * FROM users WHERE UID = ?", (uid,))
         return self.cursor.fetchone()
 
-    def get_user_by_role_and_password(self, uid, identity, password):
+    def get_user_by_role_and_password(self, uid, name, identity, password):
         # 根据身份和密码获取用户信息
-        self.cursor.execute("SELECT * FROM users WHERE UID = ? AND UIDENTITY = ? AND UPD = ?", (uid,identity, password))
+        self.cursor.execute("SELECT * FROM users WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?", (uid, name, identity, password))
         return self.cursor.fetchone()
 
     def close(self):
@@ -50,8 +38,9 @@ class DummyModel:
 
 # 登录页面
 class LoginPage(QWidget):
-    def __init__(self):
+    def __init__(self, db):  # 接受 db 参数
         super().__init__()
+        self.db = db  # 将 db 保存为实例变量
         self.initUI()
 
     def initUI(self):
@@ -66,16 +55,23 @@ class LoginPage(QWidget):
 
         # 身份选择
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["管理员", "用户", "游客"])
+        self.role_combo.addItems(["管理员", "用户"])
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
 
-        # 用户名和密码输入
-        self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText("请输入用户名")
-        layout.addWidget(QLabel("用户名："))
-        layout.addWidget(self.username_input)
+        # UID 输入
+        self.uid_input = QLineEdit()
+        self.uid_input.setPlaceholderText("请输入用户id")
+        layout.addWidget(QLabel("用户id："))
+        layout.addWidget(self.uid_input)
 
+        # 名称输入
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("请输入用户名")
+        layout.addWidget(QLabel("用户名称："))
+        layout.addWidget(self.name_input)
+
+        # 密码输入
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("请输入密码")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -95,23 +91,78 @@ class LoginPage(QWidget):
         self.setLayout(layout)
 
     def on_login(self):
-        username = self.username_input.text()
+        uid = self.uid_input.text()
+        name = self.name_imput.text()
         password = self.password_input.text()
-        role = self.role_combo.currentText()
+        identity = self.role_combo.currentText()
 
-        # 简单的登录验证（实际使用时需要连接数据库或调用API）
-        if username and password:
-            QMessageBox.information(self, "登录成功", f"欢迎 {role} {username}！")
+        if not uid or not password:
+            QMessageBox.warning(self, "登录失败", "UID 或密码不能为空！")
+            return
+
+        # 检查用户是否存在
+        user = self.db.get_user_by_role_and_password(uid, name, identity, password)
+        if user:  # 检查用户是否存在
+            QMessageBox.information(self, "登录成功", f"欢迎 {identity} {uid}！")
             self.open_prediction_page()
         else:
-            QMessageBox.warning(self, "登录失败", "用户名或密码不能为空！")
+            QMessageBox.warning(self, "登录失败", "UID 或密码错误！")
 
     def on_register(self):
-        QMessageBox.information(self, "注册", "注册功能尚未实现！")
+        # 打开注册页面
+        self.register_page = RegisterPage(self.db)
+        self.register_page.show()
 
     def open_prediction_page(self):
+        # 打开预测页面
         self.prediction_page = PredictionPage()
         self.prediction_page.show()
+        self.close()
+
+# 注册页面
+class RegisterPage(QWidget):
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("注册页面")
+
+        # 布局
+        layout = QVBoxLayout()
+
+        # 身份选择
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(["管理员", "用户"])
+        layout.addWidget(QLabel("选择身份："))
+        layout.addWidget(self.role_combo)
+
+        # 密码输入
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("请输入密码")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        layout.addWidget(QLabel("密码："))
+        layout.addWidget(self.password_input)
+
+        # 注册按钮
+        self.register_button = QPushButton("注册")
+        self.register_button.clicked.connect(self.on_register)
+        layout.addWidget(self.register_button)
+
+        self.setLayout(layout)
+
+    def on_register(self):
+        identity = self.role_combo.currentText()
+        password = self.password_input.text()
+
+        if not password:
+            QMessageBox.warning(self, "注册失败", "密码不能为空！")
+            return
+
+        # 添加用户到数据库
+        self.db.add_user(identity, password)
+        QMessageBox.information(self, "注册成功", "用户注册成功！")
         self.close()
 
 # 预测页面
@@ -158,18 +209,29 @@ class PredictionPage(QWidget):
 
 # 主窗口
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, db):  # 接受 db 参数
         super().__init__()
         self.setWindowTitle("系统登录")
         self.setGeometry(100, 100, 400, 300)
+        self.db = db
 
         # 设置登录页面为主页面
-        self.login_page = LoginPage()
+        self.login_page = LoginPage(self.db)  # 将 db 传递给 LoginPage
         self.setCentralWidget(self.login_page)
 
 # 运行程序
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
+
+    # 初始化数据库（使用现有的数据库文件）
+    db = Database("database.db")
+
+    # 创建主窗口
+    window = MainWindow(db)
     window.show()
+
+    # 运行应用
     sys.exit(app.exec())
+
+    # 关闭数据库连接
+    db.close()
