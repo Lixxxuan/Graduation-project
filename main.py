@@ -19,6 +19,23 @@ class Database:
         except sqlite3.Error as e:
             print("数据库连接失败：", e)
 
+    def get_latest_notice(self):
+        try:
+            self.cursor.execute("SELECT NOTICE FROM notice ORDER BY TIME DESC LIMIT 1")
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print("获取最新公告失败：", e)
+            return None
+    def update_notice(self, notice, operator_id):
+        try:
+            # 插入新的公告记录
+            self.cursor.execute("INSERT INTO notice (NOTICE, OPRATORID, TIME) VALUES (?, ?, datetime('now'))",
+                                (notice, operator_id))
+            self.conn.commit()
+            print("公告更新成功")
+        except sqlite3.Error as e:
+            print("公告更新失败：", e)
+
     def add_user(self, name, identity, password):
         try:
             self.cursor.execute("INSERT INTO user (UNAME, UIDENTITY, UPD) VALUES (?, ?, ?)", (name, identity, password))
@@ -63,7 +80,7 @@ class Database:
         self.conn.close()
         print("数据库连接关闭")
 
-# YOLOv8 模型类
+# YOLOv11 模型类
 class YOLOModel:
     def __init__(self, model_path):
         self.model = YOLO(model_path)
@@ -244,7 +261,7 @@ class RegisterPage(QWidget):
 
         # 身份选择
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["管理员", "用户"])
+        self.role_combo.addItems(["Administrator", "User"])
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
 
@@ -328,6 +345,12 @@ class HomePage(QWidget):
         self.notice_label = QLabel("公告：欢迎使用本系统！")
         self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.notice_label)
+        latest_notice = self.main_window.db.get_latest_notice()
+        if latest_notice:
+            self.notice_label.setText(latest_notice[0])  # 显示公告内容
+        else:
+            self.notice_label.setText("公告：暂无公告")
+
 
         # 编辑公告按钮（仅管理员可见）
         if self.main_window.current_user[2] == "Administrator":
@@ -415,8 +438,14 @@ class EditNoticePage(QWidget):
         self.setLayout(layout)
 
     def on_save(self):
-        # 保存公告
+        # 获取公告内容和操作者 ID
         notice = self.notice_edit.toPlainText()
+        operator_id = self.main_window.current_user[0]  # 当前用户的 UID
+
+        # 保存公告到数据库
+        self.main_window.db.update_notice(notice, operator_id)
+
+        # 更新主页的公告显示
         self.main_window.home_page.notice_label.setText(notice)
         self.close()
 
