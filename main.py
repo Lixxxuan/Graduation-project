@@ -26,6 +26,35 @@ class Database:
         except sqlite3.Error as e:
             print("获取最新公告失败：", e)
             return None
+
+    def add_feedback(self, serve_id, user_id, feedback):
+        try:
+            # 插入新反馈记录
+            self.cursor.execute(
+                "INSERT INTO serve (SERVEID, USERID, FEEDBACK, SERVETIME, FINISH) VALUES (?, ?, ?, datetime('now'), ?)",
+                (serve_id, user_id, feedback, False))
+            self.conn.commit()
+            print("反馈提交成功")
+        except sqlite3.Error as e:
+            print("反馈提交失败：", e)
+
+    def update_feedback_status(self, serve_id):
+        try:
+            # 将 FINISH 列更新为 True
+            self.cursor.execute("UPDATE serve SET FINISH = ? WHERE SERVEID = ?", (True, serve_id))
+            self.conn.commit()
+            print("反馈状态更新成功")
+        except sqlite3.Error as e:
+            print("反馈状态更新失败：", e)
+    def get_all_feedback(self):
+        try:
+            self.cursor.execute("SELECT * FROM serve")
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print("获取反馈失败：", e)
+            return []
+
+
     def update_notice(self, notice, operator_id):
         try:
             # 插入新的公告记录
@@ -213,6 +242,163 @@ class LoginPage(QWidget):
         self.register_page = RegisterPage(self.db)
         self.register_page.show()
 
+class FeedbackPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("反馈页面")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f0f0f0;
+                font-family: Arial;
+            }
+            QLabel {
+                font-size: 14px;
+                color: #333;
+            }
+            QTextEdit {
+                padding: 5px;
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                color: white;
+                background-color: #007bff;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        # 布局
+        layout = QVBoxLayout()
+
+        # 反馈输入框
+        self.feedback_input = QTextEdit()
+        self.feedback_input.setPlaceholderText("请输入您的反馈内容")
+        layout.addWidget(self.feedback_input)
+
+        # 提交按钮
+        self.submit_button = QPushButton("提交")
+        self.submit_button.clicked.connect(self.on_submit)
+        layout.addWidget(self.submit_button)
+
+        if self.main_window.current_user[2] == "Administrator":
+            self.handle_feedback_button = QPushButton("处理反馈")
+            self.handle_feedback_button.clicked.connect(self.on_handle_feedback)
+            layout.addWidget(self.handle_feedback_button)
+
+        self.setLayout(layout)
+
+    def on_submit(self):
+        # 获取反馈内容
+        feedback = self.feedback_input.toPlainText()
+        if not feedback:
+            QMessageBox.warning(self, "提交失败", "反馈内容不能为空！")
+            return
+
+        # 获取用户 ID 和服务 ID（假设服务 ID 是自动生成的）
+        user_id = self.main_window.current_user[0]
+        serve_id = self.generate_serve_id()  # 生成唯一的服务 ID
+
+        # 保存反馈到数据库
+        self.main_window.db.add_feedback(serve_id, user_id, feedback)
+        QMessageBox.information(self, "提交成功", "反馈已提交！")
+        self.close()
+
+    def generate_serve_id(self):
+        # 生成唯一的服务 ID（可以根据需求自定义）
+        import uuid
+        return str(uuid.uuid4())
+
+    def on_handle_feedback(self):
+        # 打开处理反馈页面
+        self.handle_feedback_page = HandleFeedbackPage(self.main_window)
+        self.handle_feedback_page.show()
+
+class HandleFeedbackPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("处理反馈")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f0f0f0;
+                font-family: Arial;
+            }
+            QLabel {
+                font-size: 14px;
+                color: #333;
+            }
+            QTableWidget {
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                color: white;
+                background-color: #007bff;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        # 布局
+        layout = QVBoxLayout()
+
+        # 反馈表格
+        self.feedback_table = QTableWidget()
+        self.feedback_table.setColumnCount(5)
+        self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
+        self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.load_feedback_table()
+        layout.addWidget(self.feedback_table)
+
+        # 处理按钮
+        self.handle_button = QPushButton("标记为已处理")
+        self.handle_button.clicked.connect(self.on_handle)
+        layout.addWidget(self.handle_button)
+
+        self.setLayout(layout)
+
+    def load_feedback_table(self):
+        # 加载所有反馈
+        feedbacks = self.main_window.db.get_all_feedback()
+        self.feedback_table.setRowCount(len(feedbacks))
+        for i, feedback in enumerate(feedbacks):
+            for j, item in enumerate(feedback):
+                self.feedback_table.setItem(i, j, QTableWidgetItem(str(item)))
+
+    def on_handle(self):
+        # 获取选中的反馈
+        selected_row = self.feedback_table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "操作失败", "请选择一条反馈！")
+            return
+
+        # 获取服务 ID
+        serve_id = self.feedback_table.item(selected_row, 0).text()
+
+        # 更新反馈状态
+        self.main_window.db.update_feedback_status(serve_id)
+        QMessageBox.information(self, "操作成功", "反馈已标记为已处理！")
+        self.load_feedback_table()  # 刷新表格
 # 注册页面
 class RegisterPage(QWidget):
     def __init__(self, db):
@@ -255,6 +441,8 @@ class RegisterPage(QWidget):
                 border-radius: 5px;
             }
         """)
+
+
 
         # 布局
         layout = QVBoxLayout()
@@ -363,6 +551,11 @@ class HomePage(QWidget):
         self.profile_button.clicked.connect(self.on_profile)
         layout.addWidget(self.profile_button)
 
+        # 处理反馈按钮
+        if self.main_window.current_user[2] == "Administrator":
+            self.handle_feedback_button = QPushButton("处理反馈")
+            self.handle_feedback_button.clicked.connect(self.on_handle_feedback)
+            layout.addWidget(self.handle_feedback_button)
         # 预测按钮
         self.predict_button = QPushButton("进行预测")
         self.predict_button.clicked.connect(self.on_predict)
@@ -379,6 +572,11 @@ class HomePage(QWidget):
         # 打开个人信息页面
         self.profile_page = ProfilePage(self.main_window)
         self.profile_page.show()
+
+    def on_handle_feedback(self):
+        # 打开处理反馈页面
+        self.handle_feedback_page = HandleFeedbackPage(self.main_window)
+        self.handle_feedback_page.show()
 
     def on_predict(self):
         # 打开预测页面
@@ -581,6 +779,11 @@ class PredictionPage(QWidget):
         self.upload_button.clicked.connect(self.on_upload)
         layout.addWidget(self.upload_button)
 
+        # 反馈按钮
+        self.feedback_button = QPushButton("提交反馈")
+        self.feedback_button.clicked.connect(self.on_feedback)  # 绑定点击事件
+        layout.addWidget(self.feedback_button)
+
         # 显示图片
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -598,6 +801,10 @@ class PredictionPage(QWidget):
 
         self.setLayout(layout)
 
+    def on_feedback(self):
+        # 打开反馈页面
+        self.feedback_page = FeedbackPage(self.main_window)
+        self.feedback_page.show()
     def on_upload(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
