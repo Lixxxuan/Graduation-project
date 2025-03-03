@@ -1,12 +1,12 @@
 import sys
 import sqlite3
-
-from PyQt6.QtGui import QPixmap
+import cv2
+from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
-    QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
+    QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
 
 # 数据库操作类
@@ -143,11 +143,11 @@ class LoginPage(QWidget):
                 font-family: Arial;
             }
             QLabel {
-                font-size: 14px;
+                font-size: 16px;
                 color: #333;
             }
             QLineEdit {
-                padding: 5px;
+                padding: 10px;
                 font-size: 14px;
                 border: 1px solid #ccc;
                 border-radius: 5px;
@@ -745,7 +745,12 @@ class PredictionPage(QWidget):
         super().__init__()
         self.main_window = main_window
         self.initUI()
-        self.model = YOLOModel(model_path='./best.pt')  # 加载 YOLOv8 模型
+        self.model = YOLOModel(model_path='./best.pt')  # 加载 YOLOv11 模型
+        self.video_path = None  # 视频文件路径
+        self.video_capture = None  # 视频捕获对象
+        self.current_frame = None  # 当前帧
+        self.timer = QTimer()  # 定时器，用于播放视频
+        self.timer.timeout.connect(self.update_frame)  # 定时器触发时更新帧
 
     def initUI(self):
         self.setWindowTitle("预测页面")
@@ -774,6 +779,33 @@ class PredictionPage(QWidget):
         # 布局
         layout = QVBoxLayout()
 
+        # 上传视频按钮
+        self.upload_video_button = QPushButton("上传视频")
+        self.upload_video_button.clicked.connect(self.on_upload_video)
+        layout.addWidget(self.upload_video_button)
+
+        # 视频播放控制
+        self.video_slider = QSlider(Qt.Orientation.Horizontal)
+        self.video_slider.setMinimum(0)
+        self.video_slider.setMaximum(100)
+        self.video_slider.valueChanged.connect(self.on_slider_changed)
+        layout.addWidget(self.video_slider)
+
+        # 播放/暂停按钮
+        self.play_button = QPushButton("播放")
+        self.play_button.clicked.connect(self.on_play)
+        layout.addWidget(self.play_button)
+
+        # 截图按钮
+        self.snapshot_button = QPushButton("截图并识别")
+        self.snapshot_button.clicked.connect(self.on_snapshot)
+        layout.addWidget(self.snapshot_button)
+
+        # 显示视频帧
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.video_label)
+
         # 上传图片按钮
         self.upload_button = QPushButton("上传图片")
         self.upload_button.clicked.connect(self.on_upload)
@@ -800,6 +832,78 @@ class PredictionPage(QWidget):
         layout.addWidget(self.back_button)
 
         self.setLayout(layout)
+
+    def on_upload_video(self):
+        # 打开文件对话框，选择视频文件
+        self.video_path, _ = QFileDialog.getOpenFileName(self, "选择视频文件", "", "Videos (*.mp4 *.avi *.mov)")
+        if self.video_path:
+            # 初始化视频捕获对象
+            self.video_capture = cv2.VideoCapture(self.video_path)
+            if not self.video_capture.isOpened():
+                QMessageBox.warning(self, "错误", "无法打开视频文件！")
+                return
+
+            # 获取视频总帧数和帧率
+            self.total_frames = int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.fps = self.video_capture.get(cv2.CAP_PROP_FPS)
+
+            # 设置滑块的最大值
+            self.video_slider.setMaximum(self.total_frames)
+
+            # 显示第一帧
+            self.update_frame()
+
+    def update_frame(self):
+        # 读取当前帧
+        ret, frame = self.video_capture.read()
+        if ret:
+            self.current_frame = frame
+            # 将 OpenCV 帧转换为 QImage
+            height, width, channel = frame.shape
+            bytes_per_line = 3 * width
+            q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
+            # 显示帧
+            self.video_label.setPixmap(QPixmap.fromImage(q_img).scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+
+    def on_slider_changed(self, value):
+        # 当滑块值改变时，跳转到指定帧
+        if self.video_capture:
+            self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, value)
+            self.update_frame()
+
+    def on_play(self):
+        # 播放/暂停视频
+        if self.timer.isActive():
+            self.timer.stop()
+            self.play_button.setText("播放")
+        else:
+            self.timer.start(1000 // self.fps)  # 根据帧率设置定时器间隔
+            self.play_button.setText("暂停")
+
+    def on_snapshot(self):
+        # 截取当前帧并进行识别
+        if self.current_frame is not None:
+            # 保存当前帧为临时文件
+            temp_image_path = "temp_frame.jpg"
+            cv2.imwrite(temp_image_path, self.current_frame)
+
+            # 调用 YOLO 模型进行识别
+            class_name, confidence, save_dir = self.model.predict(temp_image_path)
+            if class_name and confidence:
+                # 显示识别结果
+                result_image_path = f"{save_dir}/{temp_image_path.split('/')[-1]}"  # 假设保存的图片名称不变
+                result_pixmap = QPixmap(result_image_path)
+                self.video_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+                self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
+            else:
+                self.result_label.setText("未检测到目标")
+
+    def on_back(self):
+        # 返回主页
+        if self.video_capture:
+            self.video_capture.release()  # 释放视频捕获对象
+        self.main_window.setCentralWidget(HomePage(self.main_window))
+        self.close()
 
     def on_feedback(self):
         # 打开反馈页面
@@ -833,7 +937,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db):
         super().__init__()
         self.setWindowTitle("系统登录")
-        self.setGeometry(100, 100, 400, 300)
+        self.setGeometry(100, 100, 800, 600)  # 调整窗口大小
         self.db = db
         self.current_user = None  # 当前登录用户
         self.home_page = None  # 主页
