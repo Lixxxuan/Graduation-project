@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 # 数据库操作类
 class Database:
@@ -113,6 +115,7 @@ class Database:
 class YOLOModel:
     def __init__(self, model_path):
         self.model = YOLO(model_path)
+        print("模型类别名称：", self.model.names)  # 打印类别名称
 
     def predict(self, image_path):
         # 预测并保存结果
@@ -789,6 +792,7 @@ class PredictionPage(QWidget):
         self.current_frame = None  # 当前帧
         self.timer = QTimer()  # 定时器，用于播放视频
         self.timer.timeout.connect(self.update_frame)  # 定时器触发时更新帧
+        self.auto_tracking = False  # 自动跟踪标志
 
     def initUI(self):
         self.setWindowTitle("预测页面")
@@ -847,6 +851,10 @@ class PredictionPage(QWidget):
         right_frame = QFrame()
         right_frame.setLayout(right_layout)
 
+        # 自动跟踪按钮
+        self.auto_track_button = QPushButton("自动跟踪")
+        self.auto_track_button.clicked.connect(self.on_auto_track)
+        right_layout.addWidget(self.auto_track_button)
 
         # 上传视频按钮
         self.upload_video_button = QPushButton("上传视频")
@@ -896,6 +904,19 @@ class PredictionPage(QWidget):
 
         self.setLayout(main_layout)
 
+    def on_auto_track(self):
+        if self.video_capture is None:
+            QMessageBox.warning(self, "错误", "请先上传视频！")
+            return
+
+        # 如果定时器未启动，则启动定时器
+        if not self.timer.isActive():
+            self.timer.start(1000 // self.fps)  # 根据帧率设置定时器间隔
+            self.play_button.setText("暂停")
+
+        # 设置自动跟踪标志
+        self.auto_tracking = True
+        QMessageBox.information(self, "提示", "自动跟踪已启动！")
     def on_upload_video(self):
         # 打开文件对话框，选择视频文件
         self.video_path, _ = QFileDialog.getOpenFileName(self, "选择视频文件", "", "Videos (*.mp4 *.avi *.mov)")
@@ -917,16 +938,47 @@ class PredictionPage(QWidget):
             self.update_frame()
 
     def update_frame(self):
+        if self.video_capture is None:
+            return
+
         # 读取当前帧
         ret, frame = self.video_capture.read()
-        if ret:
-            self.current_frame = frame
-            # 将 OpenCV 帧转换为 QImage
-            height, width, channel = frame.shape
-            bytes_per_line = 3 * width
-            q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
-            # 显示帧
-            self.video_label.setPixmap(QPixmap.fromImage(q_img).scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+        if not ret:
+            self.timer.stop()  # 停止定时器
+            QMessageBox.information(self, "提示", "视频播放完毕！")
+            return
+
+        self.current_frame = frame
+
+        # 如果启用了自动跟踪
+        if self.auto_tracking:
+            # 使用 YOLO 模型进行目标检测
+            results = self.model.model.track(frame, persist=True)
+            print("模型输出：", results)  # 打印模型输出
+            if len(results) > 0:
+                boxes = results[0].boxes
+                print("检测框：", boxes)  # 打印检测框信息
+                if len(boxes) > 0:
+                    for box in boxes:
+                        # 提取类别 ID 和类别名称
+                        class_id = int(box.cls[0])  # 类别 ID
+                        class_name = self.model.model.names[class_id]  # 类别名称
+                        confidence = float(box.conf[0])  # 置信度
+                        print(f"类别 ID: {class_id}, 类别名称: {class_name}, 置信度: {confidence}")  # 打印类别信息
+
+                        # 绘制检测框
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # 绘制绿色矩形框
+                        cv2.putText(frame, f"{class_name} {confidence:.2f}", (x1, y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)  # 显示类别名称和置信度
+
+        # 将 OpenCV 帧转换为 QImage
+        height, width, channel = frame.shape
+        bytes_per_line = 3 * width
+        q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
+
+        # 显示帧（保持原始分辨率）
+        self.video_label.setPixmap(QPixmap.fromImage(q_img))
 
     def on_slider_changed(self, value):
         # 当滑块值改变时，跳转到指定帧
