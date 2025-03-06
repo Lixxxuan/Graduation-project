@@ -718,6 +718,11 @@ class ProfilePage(QWidget):
             self.load_user_table()
             layout.addWidget(self.user_table)
 
+            # 添加选择用户的功能
+            self.select_user_button = QPushButton("选择用户")
+            self.select_user_button.clicked.connect(self.on_select_user)
+            layout.addWidget(self.select_user_button)
+
         self.setLayout(layout)
 
     def load_user_table(self):
@@ -738,6 +743,39 @@ class ProfilePage(QWidget):
         self.main_window.db.update_user(uid, name, identity, password)
         QMessageBox.information(self, "保存成功", "用户信息已更新！")
         self.close()
+
+    def on_select_user(self):
+        # 获取选中的用户
+        selected_row = self.user_table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "操作失败", "请选择一个用户！")
+            return
+
+        # 获取选中的用户信息
+        selected_uid = self.user_table.item(selected_row, 0).text()
+        selected_name = self.user_table.item(selected_row, 1).text()
+        selected_identity = self.user_table.item(selected_row, 2).text()
+        selected_password = self.user_table.item(selected_row, 3).text()
+
+        # 更新输入框中的信息
+        self.uid_label.setText(f"用户ID：{selected_uid}")
+        self.name_input.setText(selected_name)
+        self.identity_input.setText(selected_identity)
+        self.password_input.setText(selected_password)
+
+        # 修改保存按钮的功能，使其更新选中的用户信息
+        self.save_button.disconnect()
+        self.save_button.clicked.connect(lambda: self.on_save_selected_user(selected_uid))
+
+    def on_save_selected_user(self, uid):
+        # 保存选中的用户信息
+        name = self.name_input.text()
+        identity = self.identity_input.text()
+        password = self.password_input.text()
+
+        self.main_window.db.update_user(uid, name, identity, password)
+        QMessageBox.information(self, "保存成功", "用户信息已更新！")
+        self.load_user_table()  # 刷新用户表格
 
 # 预测页面
 class PredictionPage(QWidget):
@@ -852,7 +890,7 @@ class PredictionPage(QWidget):
         self.back_button.clicked.connect(self.on_back)
         right_layout.addWidget(self.back_button)
 
-        # 将左右布局添加到主布局
+        # 将左右的布局添加到主布局
         main_layout.addWidget(left_frame, 70)  # 左侧占 70% 宽度
         main_layout.addWidget(right_frame, 30)  # 右侧占 30% 宽度
 
