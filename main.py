@@ -4,7 +4,7 @@ import cv2
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
-    QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider
+    QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
@@ -774,64 +774,89 @@ class PredictionPage(QWidget):
             QPushButton:hover {
                 background-color: #0056b3;
             }
+            QSlider {
+                padding: 10px;
+            }
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                padding: 10px;
+                margin: 10px;
+            }
         """)
 
         # 布局
-        layout = QVBoxLayout()
+        main_layout = QHBoxLayout()
+
+        left_layout = QVBoxLayout()
+        left_frame = QFrame()
+        left_frame.setLayout(left_layout)
+
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet("background-color: black; border-radius: 10px;")
+        left_layout.addWidget(self.video_label)
+
+
+        # 图片显示区域
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setStyleSheet("background-color: black; border-radius: 10px;")
+        left_layout.addWidget(self.image_label)
+
+        # 右侧布局（按钮和控件）
+        right_layout = QVBoxLayout()
+        right_frame = QFrame()
+        right_frame.setLayout(right_layout)
+
 
         # 上传视频按钮
         self.upload_video_button = QPushButton("上传视频")
         self.upload_video_button.clicked.connect(self.on_upload_video)
-        layout.addWidget(self.upload_video_button)
+        right_layout.addWidget(self.upload_video_button)
 
         # 视频播放控制
         self.video_slider = QSlider(Qt.Orientation.Horizontal)
         self.video_slider.setMinimum(0)
         self.video_slider.setMaximum(100)
         self.video_slider.valueChanged.connect(self.on_slider_changed)
-        layout.addWidget(self.video_slider)
+        right_layout.addWidget(self.video_slider)
 
         # 播放/暂停按钮
         self.play_button = QPushButton("播放")
         self.play_button.clicked.connect(self.on_play)
-        layout.addWidget(self.play_button)
+        right_layout.addWidget(self.play_button)
 
         # 截图按钮
         self.snapshot_button = QPushButton("截图并识别")
         self.snapshot_button.clicked.connect(self.on_snapshot)
-        layout.addWidget(self.snapshot_button)
-
-        # 显示视频帧
-        self.video_label = QLabel()
-        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.video_label)
+        right_layout.addWidget(self.snapshot_button)
 
         # 上传图片按钮
         self.upload_button = QPushButton("上传图片")
         self.upload_button.clicked.connect(self.on_upload)
-        layout.addWidget(self.upload_button)
+        right_layout.addWidget(self.upload_button)
 
         # 反馈按钮
         self.feedback_button = QPushButton("提交反馈")
-        self.feedback_button.clicked.connect(self.on_feedback)  # 绑定点击事件
-        layout.addWidget(self.feedback_button)
-
-        # 显示图片
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.image_label)
+        self.feedback_button.clicked.connect(self.on_feedback)
+        right_layout.addWidget(self.feedback_button)
 
         # 预测结果
         self.result_label = QLabel("预测结果将显示在这里")
         self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.result_label)
+        right_layout.addWidget(self.result_label)
 
         # 返回按钮
         self.back_button = QPushButton("返回主页")
         self.back_button.clicked.connect(self.on_back)
-        layout.addWidget(self.back_button)
+        right_layout.addWidget(self.back_button)
 
-        self.setLayout(layout)
+        # 将左右布局添加到主布局
+        main_layout.addWidget(left_frame, 70)  # 左侧占 70% 宽度
+        main_layout.addWidget(right_frame, 30)  # 右侧占 30% 宽度
+
+        self.setLayout(main_layout)
 
     def on_upload_video(self):
         # 打开文件对话框，选择视频文件
@@ -893,7 +918,7 @@ class PredictionPage(QWidget):
                 # 显示识别结果
                 result_image_path = f"{save_dir}/{temp_image_path.split('/')[-1]}"  # 假设保存的图片名称不变
                 result_pixmap = QPixmap(result_image_path)
-                self.video_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+                self.image_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
             else:
                 self.result_label.setText("未检测到目标")
@@ -909,6 +934,7 @@ class PredictionPage(QWidget):
         # 打开反馈页面
         self.feedback_page = FeedbackPage(self.main_window)
         self.feedback_page.show()
+
     def on_upload(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
@@ -916,7 +942,7 @@ class PredictionPage(QWidget):
             pixmap = QPixmap(file_path)
             self.image_label.setPixmap(pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
 
-            # 调用 YOLOv8 模型进行预测
+            # 调用 YOLO 模型进行预测
             class_name, confidence, save_dir = self.model.predict(file_path)
             if class_name and confidence:
                 # 显示预测结果图片
@@ -926,7 +952,6 @@ class PredictionPage(QWidget):
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
             else:
                 self.result_label.setText("未检测到目标")
-
     def on_back(self):
         # 返回主页
         self.main_window.setCentralWidget(HomePage(self.main_window))
