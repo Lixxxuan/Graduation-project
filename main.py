@@ -1,9 +1,11 @@
 import sys
 import sqlite3
+import uuid
+
 import cv2
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
+    QApplication, QMainWindow, QGridLayout, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
     QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer
@@ -20,6 +22,55 @@ class Database:
             print("数据库连接成功")
         except sqlite3.Error as e:
             print("数据库连接失败：", e)
+
+    def get_all_predictions(self):
+        """获取所有预测记录"""
+        try:
+            self.cursor.execute("SELECT * FROM prediction")
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print("获取预测记录失败：", e)
+            return []
+
+    def add_prediction(self, user_id, image_path, result):
+        """插入预测记录"""
+        try:
+            predict_id = str(uuid.uuid4())  # 生成唯一的预测 ID
+            self.cursor.execute(
+                "INSERT INTO prediction (PREDICTID, USERID, IMAGEPATH, RESULT, PREDICTTIME) VALUES (?, ?, ?, ?, datetime('now'))",
+                (predict_id, user_id, image_path, result)
+            )
+            self.conn.commit()
+            print("预测记录保存成功")
+        except sqlite3.Error as e:
+            print("预测记录保存失败：", e)
+
+    def get_user_count(self):
+        """获取用户数量"""
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM user")
+            return self.cursor.fetchone()[0]
+        except sqlite3.Error as e:
+            print("获取用户数量失败：", e)
+            return 0
+
+    def get_feedback_count(self):
+        """获取反馈数量"""
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM serve")
+            return self.cursor.fetchone()[0]
+        except sqlite3.Error as e:
+            print("获取反馈数量失败：", e)
+            return 0
+
+    def get_prediction_count(self):
+        """获取预测次数"""
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM prediction")
+            return self.cursor.fetchone()[0]
+        except sqlite3.Error as e:
+            print("获取预测次数失败：", e)
+            return 0
 
     def get_latest_notice(self):
         try:
@@ -48,6 +99,8 @@ class Database:
             print("反馈状态更新成功")
         except sqlite3.Error as e:
             print("反馈状态更新失败：", e)
+
+
     def get_all_feedback(self):
         try:
             self.cursor.execute("SELECT * FROM serve")
@@ -135,15 +188,15 @@ class LoginPage(QWidget):
     def __init__(self, db, main_window):
         super().__init__()
         self.db = db
-        self.main_window = main_window  # 保存主窗口引用
+        self.main_window = main_window
         self.initUI()
 
     def initUI(self):
         self.setWindowTitle("登录页面")
         self.setStyleSheet("""
             QWidget {
-                background-color: #f0f0f0;
-                font-family: Arial;
+                background-color: #f5f5f5;
+                font-family: 'Segoe UI', sans-serif;
             }
             QLabel {
                 font-size: 16px;
@@ -152,8 +205,12 @@ class LoginPage(QWidget):
             QLineEdit {
                 padding: 10px;
                 font-size: 14px;
-                border: 1px solid #ccc;
+                border: 1px solid #ddd;
                 border-radius: 5px;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid #007bff;
             }
             QPushButton {
                 padding: 10px;
@@ -169,55 +226,72 @@ class LoginPage(QWidget):
             QComboBox {
                 padding: 5px;
                 font-size: 14px;
-                border: 1px solid #ccc;
+                border: 1px solid #ddd;
                 border-radius: 5px;
+                background-color: white;
+            }
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                padding: 20px;
+                margin: 20px;
             }
         """)
 
-        # 布局
-        layout = QVBoxLayout()
+        # 主布局
+        main_layout = QVBoxLayout()
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 公告区域
-        self.notice_label = QLabel("公告：欢迎使用本系统！")
-        self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.notice_label)
+        # 卡片式布局
+        card_frame = QFrame()
+        card_layout = QVBoxLayout()
+        card_frame.setLayout(card_layout)
+
+        # 标题
+        title_label = QLabel("用户登录")
+        title_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #007bff;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(title_label)
 
         # 身份选择
         self.role_combo = QComboBox()
         self.role_combo.addItems(["Administrator", "User"])
-        layout.addWidget(QLabel("选择身份："))
-        layout.addWidget(self.role_combo)
+        card_layout.addWidget(QLabel("选择身份："))
+        card_layout.addWidget(self.role_combo)
 
         # UID 输入
         self.uid_input = QLineEdit()
-        self.uid_input.setPlaceholderText("请输入用户id")
-        layout.addWidget(QLabel("用户id："))
-        layout.addWidget(self.uid_input)
+        self.uid_input.setPlaceholderText("请输入用户 ID")
+        card_layout.addWidget(QLabel("用户 ID："))
+        card_layout.addWidget(self.uid_input)
 
         # 名称输入
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("请输入用户名")
-        layout.addWidget(QLabel("用户名称："))
-        layout.addWidget(self.name_input)
+        card_layout.addWidget(QLabel("用户名称："))
+        card_layout.addWidget(self.name_input)
 
         # 密码输入
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("请输入密码")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(QLabel("密码："))
-        layout.addWidget(self.password_input)
+        card_layout.addWidget(QLabel("密码："))
+        card_layout.addWidget(self.password_input)
 
         # 登录按钮
         self.login_button = QPushButton("登录")
         self.login_button.clicked.connect(self.on_login)
-        layout.addWidget(self.login_button)
+        card_layout.addWidget(self.login_button)
 
         # 注册按钮
         self.register_button = QPushButton("注册")
         self.register_button.clicked.connect(self.on_register)
-        layout.addWidget(self.register_button)
+        card_layout.addWidget(self.register_button)
 
-        self.setLayout(layout)
+        # 将卡片添加到主布局
+        main_layout.addWidget(card_frame)
+        self.setLayout(main_layout)
+
 
     def on_login(self):
         uid = self.uid_input.text()
@@ -502,69 +576,157 @@ class HomePage(QWidget):
     def initUI(self):
         self.setWindowTitle("主页")
         self.setStyleSheet("""
-            QWidget {
-                background-color: #f0f0f0;
-                font-family: Arial;
-            }
-            QLabel {
-                font-size: 14px;
-                color: #333;
-            }
-            QPushButton {
-                padding: 10px;
-                font-size: 14px;
-                color: white;
-                background-color: #007bff;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QTextEdit {
-                padding: 5px;
-                font-size: 14px;
-                border: 1px solid #ccc;
-                border-radius: 5px;
-            }
-        """)
+               QWidget {
+                   background-color: #f5f5f5;
+                   font-family: 'Segoe UI', sans-serif;
+               }
+               QLabel {
+                   font-size: 16px;
+                   color: #333;
+               }
+               QPushButton {
+                   padding: 15px;
+                   font-size: 14px;
+                   color: white;
+                   background-color: #007bff;
+                   border: none;
+                   border-radius: 5px;
+               }
+               QPushButton:hover {
+                   background-color: #0056b3;
+               }
+               QFrame {
+                   background-color: white;
+                   border-radius: 10px;
+                   padding: 20px;
+                   margin: 10px;
+                   border: 1px solid #ddd;
+               }
+           """)
 
-        # 布局
-        layout = QVBoxLayout()
+        # 主布局
+        main_layout = QVBoxLayout()
 
         # 公告区域
-        self.notice_label = QLabel("公告：欢迎使用本系统！")
-        self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.notice_label)
-        latest_notice = self.main_window.db.get_latest_notice()
-        if latest_notice:
-            self.notice_label.setText(latest_notice[0])  # 显示公告内容
-        else:
-            self.notice_label.setText("公告：暂无公告")
+        notice_frame = QFrame()
+        notice_layout = QVBoxLayout()
+        notice_frame.setLayout(notice_layout)
 
+        # 获取最新公告
+        latest_notice = self.main_window.db.get_latest_notice()
+        notice_text = latest_notice[0] if latest_notice else "暂无公告"
+
+        self.notice_label = QLabel(f"公告：{notice_text}")
+        self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        notice_layout.addWidget(self.notice_label)
+
+        main_layout.addWidget(notice_frame)
+
+        # 数据统计面板
+        stats_frame = QFrame()
+        stats_layout = QHBoxLayout()
+        stats_frame.setLayout(stats_layout)
+
+        # 用户数量卡片
+        user_card = QFrame()
+        user_card.setStyleSheet("background-color: #e3f2fd; border-radius: 10px; padding: 15px;")
+        user_layout = QVBoxLayout()
+        user_card.setLayout(user_layout)
+        user_label = QLabel("用户数量")
+        user_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        user_count = QLabel(str(self.main_window.db.get_user_count()))
+        user_count.setStyleSheet("font-size: 24px; color: #007bff;")
+        user_layout.addWidget(user_label)
+        user_layout.addWidget(user_count)
+        stats_layout.addWidget(user_card)
+
+        # 反馈数量卡片
+        feedback_card = QFrame()
+        feedback_card.setStyleSheet("background-color: #fff3e0; border-radius: 10px; padding: 15px;")
+        feedback_layout = QVBoxLayout()
+        feedback_card.setLayout(feedback_layout)
+        feedback_label = QLabel("反馈数量")
+        feedback_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        feedback_count = QLabel(str(self.main_window.db.get_feedback_count()))
+        feedback_count.setStyleSheet("font-size: 24px; color: #ff9800;")
+        feedback_layout.addWidget(feedback_label)
+        feedback_layout.addWidget(feedback_count)
+        stats_layout.addWidget(feedback_card)
+
+        # 预测次数卡片
+        predict_card = QFrame()
+        predict_card.setStyleSheet("background-color: #f0f4c3; border-radius: 10px; padding: 15px;")
+        predict_layout = QVBoxLayout()
+        predict_card.setLayout(predict_layout)
+        predict_label = QLabel("预测次数")
+        predict_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        predict_count = QLabel(str(self.main_window.db.get_prediction_count()))
+        predict_count.setStyleSheet("font-size: 24px; color: #8bc34a;")
+        predict_layout.addWidget(predict_label)
+        predict_layout.addWidget(predict_count)
+        stats_layout.addWidget(predict_card)
+
+        main_layout.addWidget(stats_frame)
+
+        # 功能按钮区域
+        button_frame = QFrame()
+        button_layout = QGridLayout()
+        button_frame.setLayout(button_layout)
+
+        # 预测记录区域（仅管理员可见）
+        if self.main_window.current_user[2] == "Administrator":
+            prediction_frame = QFrame()
+            prediction_layout = QVBoxLayout()
+            prediction_frame.setLayout(prediction_layout)
+
+            prediction_label = QLabel("预测记录")
+            prediction_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+            prediction_layout.addWidget(prediction_label)
+
+            # 预测记录表格
+            self.prediction_table = QTableWidget()
+            self.prediction_table.setColumnCount(4)
+            self.prediction_table.setHorizontalHeaderLabels(["用户ID", "图片路径", "预测结果", "预测时间"])
+            self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            self.load_prediction_table()
+            prediction_layout.addWidget(self.prediction_table)
+
+            main_layout.addWidget(prediction_frame)
+
+        self.setLayout(main_layout)
+
+        # 个人信息按钮
+        self.profile_button = QPushButton("个人信息")
+        self.profile_button.clicked.connect(self.on_profile)
+        button_layout.addWidget(self.profile_button, 0, 0)
+
+        # 处理反馈按钮（仅管理员可见）
+        if self.main_window.current_user[2] == "Administrator":
+            self.handle_feedback_button = QPushButton("处理反馈")
+            self.handle_feedback_button.clicked.connect(self.on_handle_feedback)
+            button_layout.addWidget(self.handle_feedback_button, 0, 1)
+
+        # 预测按钮
+        self.predict_button = QPushButton("进行预测")
+        self.predict_button.clicked.connect(self.on_predict)
+        button_layout.addWidget(self.predict_button, 1, 0)
 
         # 编辑公告按钮（仅管理员可见）
         if self.main_window.current_user[2] == "Administrator":
             self.edit_notice_button = QPushButton("编辑公告")
             self.edit_notice_button.clicked.connect(self.on_edit_notice)
-            layout.addWidget(self.edit_notice_button)
+            button_layout.addWidget(self.edit_notice_button, 1, 1)
 
-        # 个人信息按钮
-        self.profile_button = QPushButton("个人信息")
-        self.profile_button.clicked.connect(self.on_profile)
-        layout.addWidget(self.profile_button)
+        main_layout.addWidget(button_frame)
 
-        # 处理反馈按钮
-        if self.main_window.current_user[2] == "Administrator":
-            self.handle_feedback_button = QPushButton("处理反馈")
-            self.handle_feedback_button.clicked.connect(self.on_handle_feedback)
-            layout.addWidget(self.handle_feedback_button)
-        # 预测按钮
-        self.predict_button = QPushButton("进行预测")
-        self.predict_button.clicked.connect(self.on_predict)
-        layout.addWidget(self.predict_button)
 
-        self.setLayout(layout)
+    def load_prediction_table(self):
+        """加载预测记录"""
+        predictions = self.main_window.db.get_all_predictions()
+        self.prediction_table.setRowCount(len(predictions))
+        for i, prediction in enumerate(predictions):
+            for j, item in enumerate(prediction[1:]):  # 跳过 PREDICTID
+                self.prediction_table.setItem(i, j, QTableWidgetItem(str(item)))
 
     def on_edit_notice(self):
         # 打开编辑公告页面
@@ -996,7 +1158,7 @@ class PredictionPage(QWidget):
             self.play_button.setText("暂停")
 
     def on_snapshot(self):
-        # 截取当前帧并进行识别
+        """截取当前帧并进行识别"""
         if self.current_frame is not None:
             # 保存当前帧为临时文件
             temp_image_path = "temp_frame.jpg"
@@ -1010,6 +1172,10 @@ class PredictionPage(QWidget):
                 result_pixmap = QPixmap(result_image_path)
                 self.image_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
+
+                # 保存预测记录到数据库
+                user_id = self.main_window.current_user[0]  # 当前用户 ID
+                self.main_window.db.add_prediction(user_id, temp_image_path, class_name)
             else:
                 self.result_label.setText("未检测到目标")
 
@@ -1026,6 +1192,7 @@ class PredictionPage(QWidget):
         self.feedback_page.show()
 
     def on_upload(self):
+        """上传图片并进行预测"""
         file_path, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
             # 显示原始图片
@@ -1040,6 +1207,10 @@ class PredictionPage(QWidget):
                 result_pixmap = QPixmap(result_image_path)
                 self.image_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
+
+                # 保存预测记录到数据库
+                user_id = self.main_window.current_user[0]  # 当前用户 ID
+                self.main_window.db.add_prediction(user_id, file_path, class_name)
             else:
                 self.result_label.setText("未检测到目标")
     def on_back(self):
