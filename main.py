@@ -291,10 +291,20 @@ class LoginPage(QWidget):
         self.register_button.clicked.connect(self.on_register)
         card_layout.addWidget(self.register_button)
 
+        # 游客登录按钮
+        self.guest_button = QPushButton("游客登录")
+        self.guest_button.clicked.connect(self.on_guest_login)
+        card_layout.addWidget(self.guest_button)
+
         # 将卡片添加到主布局
         main_layout.addWidget(card_frame)
         self.setLayout(main_layout)
 
+    def on_guest_login(self):
+        # 游客登录，进入主页但限制功能
+        self.main_window.current_user = ("guest", "Guest", "Guest", "")  # 模拟游客用户
+        self.main_window.open_home_page()
+        self.close()
 
     def on_login(self):
         uid = self.uid_input.text()
@@ -569,6 +579,7 @@ class RegisterPage(QWidget):
         except Exception as e:
             print("注册出错：", e)
 
+
 # 主页
 class HomePage(QWidget):
     def __init__(self, main_window):
@@ -679,9 +690,10 @@ class HomePage(QWidget):
         self.setLayout(main_layout)
 
         # 个人信息按钮
-        self.profile_button = QPushButton("个人信息")
-        self.profile_button.clicked.connect(self.on_profile)
-        button_layout.addWidget(self.profile_button, 0, 0)
+        if self.main_window.current_user[2] != "Guest":
+            self.profile_button = QPushButton("个人信息")
+            self.profile_button.clicked.connect(self.on_profile)
+            button_layout.addWidget(self.profile_button, 0, 0)
 
         # 处理反馈按钮（仅管理员可见）
         if self.main_window.current_user[2] == "Administrator":
@@ -690,9 +702,10 @@ class HomePage(QWidget):
             button_layout.addWidget(self.handle_feedback_button, 0, 1)
 
         # 预测按钮
-        self.predict_button = QPushButton("进行预测")
-        self.predict_button.clicked.connect(self.on_predict)
-        button_layout.addWidget(self.predict_button, 1, 0)
+        if self.main_window.current_user[2] != "Guest":
+            self.predict_button = QPushButton("进行预测")
+            self.predict_button.clicked.connect(self.on_predict)
+            button_layout.addWidget(self.predict_button, 1, 0)
 
         # 预测记录按钮
 
