@@ -1,7 +1,7 @@
 import sys
 import sqlite3
 import uuid
-
+from dotenv import load_dotenv, set_key, get_key
 import cv2
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
@@ -10,9 +10,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
-# import os
+import os
 # os.environ['KMP_DUPLICATE_LIB_OK']='True'
+# 加载 .env 文件
+load_dotenv()
 
+# 获取模型路径
+MODEL_PATH = os.getenv("MODEL_PATH", "./best.pt")  # 默认路径为 ./best.pt
 # 数据库操作类
 class Database:
     def __init__(self, db_name):
@@ -184,7 +188,6 @@ class YOLOModel:
                 return class_name, confidence, results[0].save_dir
         print("未检测到目标")
         return None, None, None
-
 
 # 登录页面
 class LoginPage(QWidget):
@@ -707,7 +710,7 @@ class HomePage(QWidget):
             self.predict_button.clicked.connect(self.on_predict)
             button_layout.addWidget(self.predict_button, 1, 0)
 
-            # 查看反馈状态按钮（仅普通用户可见）
+        # 查看反馈状态按钮（仅普通用户可见）
         if self.main_window.current_user[2] == "User":
             self.view_feedback_button = QPushButton("查看反馈状态")
             self.view_feedback_button.clicked.connect(self.on_view_feedback)
@@ -717,21 +720,36 @@ class HomePage(QWidget):
         if self.main_window.current_user[2] == "Administrator":
             self.edit_notice_button = QPushButton("编辑公告")
             self.edit_notice_button.clicked.connect(self.on_edit_notice)
-            button_layout.addWidget(self.edit_notice_button, 1, 1)
+            button_layout.addWidget(self.edit_notice_button, 2, 0)
+
+        # 上传模型按钮（仅管理员可见）
+        if self.main_window.current_user[2] == "Administrator":
+            self.upload_model_button = QPushButton("上传模型")
+            self.upload_model_button.clicked.connect(self.on_upload_model)
+            button_layout.addWidget(self.upload_model_button, 2, 1)
 
         # 退出登录按钮
         self.logout_button = QPushButton("退出登录")
         self.logout_button.clicked.connect(self.on_logout)
-        button_layout.addWidget(self.logout_button, 2, 1)
+        button_layout.addWidget(self.logout_button, 3, 1)
 
         if self.main_window.current_user[2] == "Administrator":
             self.prediction_record_button = QPushButton("预测记录")
             self.prediction_record_button.clicked.connect(self.on_prediction_record)
-            button_layout.addWidget(self.prediction_record_button, 2, 0)
+            button_layout.addWidget(self.prediction_record_button, 3, 0)
 
 
         main_layout.addWidget(button_frame)
         self.setLayout(main_layout)
+
+    def on_upload_model(self):
+        """上传模型文件"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择模型文件", "", "模型文件 (*.pt)")
+        if file_path:
+            # 更新 .env 文件中的模型路径
+            set_key(".env", "MODEL_PATH", file_path)
+            QMessageBox.information(self, "上传成功", "模型文件已上传并更新！")
+
     def on_view_feedback(self):
         """打开查看反馈状态页面"""
         self.view_feedback_page = ViewFeedbackPage(self.main_window)
@@ -1120,14 +1138,23 @@ class PredictionPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.model_path = os.getenv("MODEL_PATH", "./best.pt")  # 从 .env 文件获取模型路径
         self.initUI()
-        self.model = YOLOModel(model_path='./best.pt')  # 加载 YOLOv11 模型
+        self.model = YOLOModel(model_path=self.model_path)  # 加载 YOLOv11 模型
         self.video_path = None  # 视频文件路径
         self.video_capture = None  # 视频捕获对象
         self.current_frame = None  # 当前帧
         self.timer = QTimer()  # 定时器，用于播放视频
         self.timer.timeout.connect(self.update_frame)  # 定时器触发时更新帧
         self.auto_tracking = False  # 自动跟踪标志
+
+
+    def update_model(self, new_model_path):
+        """更新模型路径并重新加载模型"""
+        self.model_path = new_model_path
+        self.model = YOLOModel(model_path=self.model_path)
+        QMessageBox.information(self, "模型更新", "模型已成功更新！")
+
 
     def initUI(self):
         self.setWindowTitle("预测页面")
