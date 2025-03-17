@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
-import os
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+# import os
+# os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 # 数据库操作类
 class Database:
@@ -707,7 +707,11 @@ class HomePage(QWidget):
             self.predict_button.clicked.connect(self.on_predict)
             button_layout.addWidget(self.predict_button, 1, 0)
 
-        # 预测记录按钮
+            # 查看反馈状态按钮（仅普通用户可见）
+        if self.main_window.current_user[2] == "User":
+            self.view_feedback_button = QPushButton("查看反馈状态")
+            self.view_feedback_button.clicked.connect(self.on_view_feedback)
+            button_layout.addWidget(self.view_feedback_button, 1, 1)
 
         # 编辑公告按钮（仅管理员可见）
         if self.main_window.current_user[2] == "Administrator":
@@ -728,6 +732,10 @@ class HomePage(QWidget):
 
         main_layout.addWidget(button_frame)
         self.setLayout(main_layout)
+    def on_view_feedback(self):
+        """打开查看反馈状态页面"""
+        self.view_feedback_page = ViewFeedbackPage(self.main_window)
+        self.main_window.setCentralWidget(self.view_feedback_page)
     def on_prediction_record(self):
         """打开预测记录页面"""
         self.prediction_record_page = PredictionRecordPage(self.main_window)
@@ -771,7 +779,81 @@ class HomePage(QWidget):
         self.main_window.setCentralWidget(PredictionPage(self.main_window))
         self.close()
 
+class ViewFeedbackPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.initUI()
 
+    def initUI(self):
+        self.setWindowTitle("查看反馈状态")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f5f5f5;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QLabel {
+                font-size: 16px;
+                color: #333;
+            }
+            QTableWidget {
+                font-size: 14px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+            }
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                color: white;
+                background-color: #007bff;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        # 主布局
+        layout = QVBoxLayout()
+
+        # 反馈记录表格
+        self.feedback_table = QTableWidget()
+        self.feedback_table.setColumnCount(5)
+        self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
+        self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.load_feedback_table()
+        layout.addWidget(self.feedback_table)
+
+        # 返回按钮
+        self.back_button = QPushButton("返回主页")
+        self.back_button.clicked.connect(self.on_back)
+        layout.addWidget(self.back_button)
+
+        self.setLayout(layout)
+
+    def load_feedback_table(self):
+        """加载当前用户的反馈记录"""
+        user_id = self.main_window.current_user[0]  # 获取当前用户的 ID
+        try:
+            # 查询当前用户的反馈记录
+            self.main_window.db.cursor.execute("SELECT * FROM serve WHERE USERID = ?", (user_id,))
+            feedbacks = self.main_window.db.cursor.fetchall()
+
+            # 设置表格行数
+            self.feedback_table.setRowCount(len(feedbacks))
+
+            # 填充表格数据
+            for i, feedback in enumerate(feedbacks):
+                for j, item in enumerate(feedback):
+                    self.feedback_table.setItem(i, j, QTableWidgetItem(str(item)))
+        except sqlite3.Error as e:
+            print("加载反馈记录失败：", e)
+
+    def on_back(self):
+        """返回主页"""
+        self.main_window.setCentralWidget(HomePage(self.main_window))
+        self.close()
 class PredictionRecordPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -1087,17 +1169,11 @@ class PredictionPage(QWidget):
         left_frame = QFrame()
         left_frame.setLayout(left_layout)
 
+        # 视频和视频显示区域
         self.video_label = QLabel()
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("background-color: black; border-radius: 10px;")
         left_layout.addWidget(self.video_label)
-
-
-        # 图片显示区域
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setStyleSheet("background-color: black; border-radius: 10px;")
-        left_layout.addWidget(self.image_label)
 
         # 右侧布局（按钮和控件）
         right_layout = QVBoxLayout()
@@ -1261,7 +1337,7 @@ class PredictionPage(QWidget):
                 # 显示识别结果
                 result_image_path = f"{save_dir}/{temp_image_path.split('/')[-1]}"  # 假设保存的图片名称不变
                 result_pixmap = QPixmap(result_image_path)
-                self.image_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+                self.video_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
 
                 # 保存预测记录到数据库
@@ -1288,7 +1364,7 @@ class PredictionPage(QWidget):
         if file_path:
             # 显示原始图片
             pixmap = QPixmap(file_path)
-            self.image_label.setPixmap(pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+            self.video_label.setPixmap(pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
 
             # 调用 YOLO 模型进行预测
             class_name, confidence, save_dir = self.model.predict(file_path)
@@ -1296,7 +1372,7 @@ class PredictionPage(QWidget):
                 # 显示预测结果图片
                 result_image_path = f"{save_dir}/{file_path.split('/')[-1]}"  # 假设保存的图片名称不变
                 result_pixmap = QPixmap(result_image_path)
-                self.image_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
+                self.video_label.setPixmap(result_pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio))
                 self.result_label.setText(f"预测结果：{class_name}，置信度：{confidence:.2f}")
 
                 # 保存预测记录到数据库
