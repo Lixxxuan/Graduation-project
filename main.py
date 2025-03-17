@@ -180,8 +180,11 @@ class YOLOModel:
                 class_id = int(boxes.cls[0])
                 confidence = float(boxes.conf[0])
                 class_name = results[0].names[class_id]
+                print(f"检测到目标：{class_name}, 置信度：{confidence}")
                 return class_name, confidence, results[0].save_dir
+        print("未检测到目标")
         return None, None, None
+
 
 # 登录页面
 class LoginPage(QWidget):
@@ -673,26 +676,6 @@ class HomePage(QWidget):
         button_layout = QGridLayout()
         button_frame.setLayout(button_layout)
 
-        # 预测记录区域（仅管理员可见）
-        if self.main_window.current_user[2] == "Administrator":
-            prediction_frame = QFrame()
-            prediction_layout = QVBoxLayout()
-            prediction_frame.setLayout(prediction_layout)
-
-            prediction_label = QLabel("预测记录")
-            prediction_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-            prediction_layout.addWidget(prediction_label)
-
-            # 预测记录表格
-            self.prediction_table = QTableWidget()
-            self.prediction_table.setColumnCount(4)
-            self.prediction_table.setHorizontalHeaderLabels(["用户ID", "图片路径", "预测结果", "预测时间"])
-            self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            self.load_prediction_table()
-            prediction_layout.addWidget(self.prediction_table)
-
-            main_layout.addWidget(prediction_frame)
-
         self.setLayout(main_layout)
 
         # 个人信息按钮
@@ -711,22 +694,49 @@ class HomePage(QWidget):
         self.predict_button.clicked.connect(self.on_predict)
         button_layout.addWidget(self.predict_button, 1, 0)
 
+        # 预测记录按钮
+
         # 编辑公告按钮（仅管理员可见）
         if self.main_window.current_user[2] == "Administrator":
             self.edit_notice_button = QPushButton("编辑公告")
             self.edit_notice_button.clicked.connect(self.on_edit_notice)
             button_layout.addWidget(self.edit_notice_button, 1, 1)
 
+        # 退出登录按钮
+        self.logout_button = QPushButton("退出登录")
+        self.logout_button.clicked.connect(self.on_logout)
+        button_layout.addWidget(self.logout_button, 2, 1)
+
+        if self.main_window.current_user[2] == "Administrator":
+            self.prediction_record_button = QPushButton("预测记录")
+            self.prediction_record_button.clicked.connect(self.on_prediction_record)
+            button_layout.addWidget(self.prediction_record_button, 2, 0)
+
+
         main_layout.addWidget(button_frame)
+        self.setLayout(main_layout)
+    def on_prediction_record(self):
+        """打开预测记录页面"""
+        self.prediction_record_page = PredictionRecordPage(self.main_window)
+        self.main_window.setCentralWidget(self.prediction_record_page)
 
-
+    def on_logout(self):
+        """退出登录"""
+        self.main_window.current_user = None  # 清空当前用户信息
+        self.main_window.setCentralWidget(LoginPage(self.main_window.db, self.main_window))
+        self.close()
     def load_prediction_table(self):
         """加载预测记录"""
         predictions = self.main_window.db.get_all_predictions()
         self.prediction_table.setRowCount(len(predictions))
+        # 确保列数已正确初始化为5，此处无需再次设置
+
         for i, prediction in enumerate(predictions):
-            for j, item in enumerate(prediction[1:]):  # 跳过 PREDICTID
+            for j, item in enumerate(prediction):  # 遍历每一列数据
                 self.prediction_table.setItem(i, j, QTableWidgetItem(str(item)))
+
+        # 设置表格自适应列宽
+        self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
     def on_edit_notice(self):
         # 打开编辑公告页面
@@ -747,6 +757,74 @@ class HomePage(QWidget):
         # 打开预测页面
         self.main_window.setCentralWidget(PredictionPage(self.main_window))
         self.close()
+
+
+class PredictionRecordPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("预测记录")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f5f5f5;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QLabel {
+                font-size: 16px;
+                color: #333;
+            }
+            QTableWidget {
+                font-size: 14px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+            }
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                color: white;
+                background-color: #007bff;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        # 主布局
+        layout = QVBoxLayout()
+
+        # 预测记录表格
+        self.prediction_table = QTableWidget()
+        self.prediction_table.setColumnCount(5)
+        self.prediction_table.setHorizontalHeaderLabels(["预测ID", "用户ID", "图片路径", "预测结果", "预测时间"])
+        self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.load_prediction_table()
+        layout.addWidget(self.prediction_table)
+
+        # 返回按钮
+        self.back_button = QPushButton("返回主页")
+        self.back_button.clicked.connect(self.on_back)
+        layout.addWidget(self.back_button)
+
+        self.setLayout(layout)
+
+    def load_prediction_table(self):
+        """加载预测记录"""
+        predictions = self.main_window.db.get_all_predictions()
+        self.prediction_table.setRowCount(len(predictions))
+        for i, prediction in enumerate(predictions):
+            for j, item in enumerate(prediction):
+                self.prediction_table.setItem(i, j, QTableWidgetItem(str(item)))
+
+    def on_back(self):
+        """返回主页"""
+        self.main_window.setCentralWidget(HomePage(self.main_window))
+        self.close()
+
 
 # 编辑公告页面
 class EditNoticePage(QWidget):
