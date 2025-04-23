@@ -781,7 +781,7 @@ class HomePage(QWidget):
 
         latest_notice = self.main_window.db.get_latest_notice()
         notice_text = latest_notice[0] if latest_notice else "暂无公告"
-        self.notice_label = QLabel(f"公告：{notice_text}")
+        self.notice_label = QLabel(f"{notice_text}")
         self.notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         notice_layout.addWidget(self.notice_label)
         main_layout.addWidget(notice_frame)
@@ -1049,7 +1049,12 @@ class EditNoticePage(QWidget):
         notice = self.notice_edit.toPlainText()
         operator_id = self.main_window.current_user[0]
         self.main_window.db.update_notice(notice, operator_id)
-        self.main_window.home_page.notice_label.setText(notice)
+
+        # 改为直接获取当前中央部件，而不是引用旧的home_page
+        current_home_page = self.main_window.centralWidget()
+        if isinstance(current_home_page, HomePage):
+            current_home_page.notice_label.setText(notice)
+
         self.close()
 
 
@@ -1416,10 +1421,11 @@ class PredictionPage(QWidget):
         self.feedback_page.show()
 
     def on_back(self):
-        """返回主页"""
         if self.video_capture:
             self.video_capture.release()
-        self.main_window.setCentralWidget(HomePage(self.main_window))
+        if hasattr(self.model, 'trackers'):
+            self.model.reset_model()  # 清理模型跟踪状态
+        self.main_window.open_home_page()  # 通过主窗口方法返回，确保主页复用
         self.close()
 
 
