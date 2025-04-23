@@ -5,8 +5,8 @@ from dotenv import load_dotenv, set_key
 import cv2
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QGridLayout, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
-    QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider, QFrame
+    QApplication, QMainWindow, QGridLayout, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QComboBox, QMessageBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QSlider, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer
 from ultralytics import YOLO
@@ -103,8 +103,10 @@ GLOBAL_STYLESHEET = """
     }
 """
 
+
 # 数据库操作类
 class Database:
+
     def __init__(self, db_name):
         """初始化数据库连接"""
         try:
@@ -243,7 +245,7 @@ class Database:
         """根据用户信息验证用户"""
         try:
             self.cursor.execute("SELECT * FROM user WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?",
-                               (uid, name, identity, password))
+                                (uid, name, identity, password))
             return self.cursor.fetchone()
         except sqlite3.Error as e:
             print("查询用户失败：", e)
@@ -262,7 +264,7 @@ class Database:
         """更新用户信息"""
         try:
             self.cursor.execute("UPDATE user SET UNAME = ?, UIDENTITY = ?, UPD = ? WHERE UID = ?",
-                               (name, identity, password, uid))
+                                (name, identity, password, uid))
             self.conn.commit()
             print("用户信息更新成功")
         except sqlite3.Error as e:
@@ -272,6 +274,7 @@ class Database:
         """关闭数据库连接"""
         self.conn.close()
         print("数据库连接关闭")
+
 
 # YOLOv11 模型类
 class YOLOModel:
@@ -426,6 +429,7 @@ class YOLOModel:
         """对视频帧进行跟踪"""
         results = self.model.track(source=frame, conf=0.1, persist=True, stream=False)
         return results
+
     def reset_model(self):
         """重置模型以清除所有跟踪状态"""
         # 重新初始化模型以确保干净状态
@@ -434,6 +438,7 @@ class YOLOModel:
         if hasattr(self.model, 'trackers'):
             self.model.trackers = None
         print("模型状态已重置")
+
 
 # 登录页面
 class LoginPage(QWidget):
@@ -529,6 +534,7 @@ class LoginPage(QWidget):
         self.register_page = RegisterPage(self.db)
         self.register_page.show()
 
+
 # 注册页面
 class RegisterPage(QWidget):
     def __init__(self, db):
@@ -548,7 +554,7 @@ class RegisterPage(QWidget):
         layout.addWidget(self.uid_label)
 
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["User","Administrator"])
+        self.role_combo.addItems(["User", "Administrator"])
         self.role_combo.currentTextChanged.connect(self.toggle_invite_code_field)  # 添加角色切换事件
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
@@ -651,6 +657,7 @@ class RegisterPage(QWidget):
             print("注册出错：", e)
             QMessageBox.critical(self, "注册错误", f"注册过程中发生错误: {str(e)}")
 
+
 # 反馈页面
 class FeedbackPage(QWidget):
     def __init__(self, main_window):
@@ -703,6 +710,7 @@ class FeedbackPage(QWidget):
         self.handle_feedback_page = HandleFeedbackPage(self.main_window)
         self.handle_feedback_page.show()
 
+
 # 处理反馈页面
 class HandleFeedbackPage(QWidget):
     def __init__(self, main_window):
@@ -752,6 +760,7 @@ class HandleFeedbackPage(QWidget):
         self.main_window.db.update_feedback_status(serve_id)
         QMessageBox.information(self, "操作成功", "反馈已标记为已处理！")
         self.load_feedback_table()
+
 
 # 主页
 class HomePage(QWidget):
@@ -918,6 +927,7 @@ class HomePage(QWidget):
         self.main_window.setCentralWidget(PredictionPage(self.main_window))
         self.close()
 
+
 # 查看反馈页面
 class ViewFeedbackPage(QWidget):
     def __init__(self, main_window):
@@ -966,6 +976,7 @@ class ViewFeedbackPage(QWidget):
         self.main_window.setCentralWidget(HomePage(self.main_window))
         self.close()
 
+
 # 预测记录页面
 class PredictionRecordPage(QWidget):
     def __init__(self, main_window):
@@ -1009,6 +1020,7 @@ class PredictionRecordPage(QWidget):
         self.main_window.setCentralWidget(HomePage(self.main_window))
         self.close()
 
+
 # 编辑公告页面
 class EditNoticePage(QWidget):
     def __init__(self, main_window):
@@ -1039,6 +1051,7 @@ class EditNoticePage(QWidget):
         self.main_window.db.update_notice(notice, operator_id)
         self.main_window.home_page.notice_label.setText(notice)
         self.close()
+
 
 # 个人信息页面
 class ProfilePage(QWidget):
@@ -1137,6 +1150,7 @@ class ProfilePage(QWidget):
         self.main_window.db.update_user(uid, name, identity, password)
         QMessageBox.information(self, "保存成功", "用户信息已更新！")
         self.load_user_table()
+
 
 # 预测页面
 class PredictionPage(QWidget):
@@ -1315,6 +1329,7 @@ class PredictionPage(QWidget):
         bytes_per_line = 3 * width
         q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
         self.video_label.setPixmap(QPixmap.fromImage(q_img))
+
     def on_slider_changed(self, value):
         """滑动条改变视频帧位置"""
         if self.video_capture:
@@ -1394,6 +1409,7 @@ class PredictionPage(QWidget):
         self.model.reset_model()
 
         QMessageBox.information(self, "提示", "已清空当前内容！")
+
     def on_feedback(self):
         """打开反馈页面"""
         self.feedback_page = FeedbackPage(self.main_window)
@@ -1405,6 +1421,7 @@ class PredictionPage(QWidget):
             self.video_capture.release()
         self.main_window.setCentralWidget(HomePage(self.main_window))
         self.close()
+
 
 # 主窗口
 class MainWindow(QMainWindow):
@@ -1424,6 +1441,7 @@ class MainWindow(QMainWindow):
         """打开主页"""
         self.home_page = HomePage(self)
         self.setCentralWidget(self.home_page)
+
 
 # 运行程序
 if __name__ == "__main__":
