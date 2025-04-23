@@ -20,14 +20,28 @@ load_dotenv()
 # 获取模型路径
 MODEL_PATH = os.getenv("MODEL_PATH", "./best.pt")
 
-# 全局样式表
+# 全局样式表（已修改，优化表头显示）
 GLOBAL_STYLESHEET = """
     QWidget {
         background-color: #ffffff;
-        font-family: 'Segoe UI', sans-serif;
+        font-family: 'Arial', sans-serif; /* 改用 Arial 字体，确保跨平台兼容 */
         font-size: 16px;
         color: #000000;
     }
+    QLabel#contact_label {
+        font-size: 14px;
+        color: #444444;
+        padding: 5px;
+        background-color: #f8f8f8;
+        border-radius: 4px;
+    }
+    
+    QLabel#support_label {
+        font-size: 12px;
+        color: #888888;
+        margin-top: 10px;
+        }
+        
     QLabel {
         color: #000000;
         font-size: 16px;
@@ -81,8 +95,11 @@ GLOBAL_STYLESHEET = """
     }
     QHeaderView::section {
         background-color: #f0f0f0;
-        padding: 8px;
+        padding: 4px; /* 减少内边距 */
         border: 1px solid #e0e0e0;
+        font-size: 14px; /* 表头字体稍小 */
+        min-height: 40px; /* 增加表头高度 */
+        text-align: center; /* 文字居中对齐 */
     }
 """
 
@@ -250,6 +267,7 @@ class Database:
 class YOLOModel:
     def __init__(self, model_path):
         """初始化YOLO模型"""
+        self.model_path = model_path
         self.model = YOLO(model_path)
         self.class_name_map = {
             "Chihuahua": "吉娃娃",
@@ -374,10 +392,14 @@ class YOLOModel:
             "African_hunting_dog": "非洲猎犬"
         }
         print("模型类别名称：", self.model.names)
+        self._is_tracking = False
 
     def predict(self, image_path):
-        """对图片进行预测"""
-        results = self.model.predict(source=image_path, conf=0.1, save=True, show=False)
+        """对图片进行预测，确保禁用跟踪"""
+        # 强制重置模型以清除跟踪状态
+        self.reset_model()
+        # 明确禁用跟踪模式
+        results = self.model.predict(source=image_path, conf=0.1, save=True, show=False, stream=False)
         if len(results) > 0:
             boxes = results[0].boxes
             if len(boxes) > 0:
@@ -389,6 +411,19 @@ class YOLOModel:
                 return chinese_class_name, confidence, results[0].save_dir
         print("未检测到目标")
         return None, None, None
+
+    def track(self, frame):
+        """对视频帧进行跟踪"""
+        results = self.model.track(source=frame, conf=0.1, persist=True, stream=False)
+        return results
+    def reset_model(self):
+        """重置模型以清除所有跟踪状态"""
+        # 重新初始化模型以确保干净状态
+        self.model = YOLO(self.model_path)
+        # 显式清除跟踪器（如果适用）
+        if hasattr(self.model, 'trackers'):
+            self.model.trackers = None
+        print("模型状态已重置")
 
 # 登录页面
 class LoginPage(QWidget):
@@ -549,6 +584,12 @@ class FeedbackPage(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(15)
 
+        contact_label = QLabel("如需紧急帮助，请联系管理员: a@likaix.in")
+        contact_label.setStyleSheet("font-size: 14px; color: #FF0000;")
+        layout.addWidget(contact_label)
+
+        self.feedback_input = QTextEdit()
+
         self.feedback_input = QTextEdit()
         self.feedback_input.setPlaceholderText("请输入您的反馈内容")
         layout.addWidget(self.feedback_input)
@@ -599,6 +640,10 @@ class HandleFeedbackPage(QWidget):
         self.feedback_table.setColumnCount(5)
         self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
         self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # 新增：设置表头属性
+        self.feedback_table.horizontalHeader().setMinimumHeight(40)
+        self.feedback_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.feedback_table.horizontalHeader().setDefaultSectionSize(150)
         self.load_feedback_table()
         layout.addWidget(self.feedback_table)
 
@@ -737,6 +782,17 @@ class HomePage(QWidget):
             button_layout.addWidget(self.prediction_record_button, 3, 0)
 
         main_layout.addWidget(button_frame)
+
+        contact_frame = QFrame()
+        contact_layout = QVBoxLayout()
+        contact_frame.setLayout(contact_layout)
+
+        contact_label = QLabel("管理员联系方式: a@likaix.in")
+        contact_label.setStyleSheet("font-size: 14px; color: #666666;")
+        contact_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        contact_layout.addWidget(contact_label)
+
+        main_layout.addWidget(contact_frame)
         self.setLayout(main_layout)
 
     def on_upload_model(self):
@@ -799,6 +855,10 @@ class ViewFeedbackPage(QWidget):
         self.feedback_table.setColumnCount(5)
         self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
         self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # 新增：设置表头属性
+        self.feedback_table.horizontalHeader().setMinimumHeight(40)
+        self.feedback_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.feedback_table.horizontalHeader().setDefaultSectionSize(150)
         self.load_feedback_table()
         layout.addWidget(self.feedback_table)
 
@@ -843,6 +903,10 @@ class PredictionRecordPage(QWidget):
         self.prediction_table.setColumnCount(5)
         self.prediction_table.setHorizontalHeaderLabels(["预测ID", "用户ID", "图片路径", "预测结果", "预测时间"])
         self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # 新增：设置表头属性
+        self.prediction_table.horizontalHeader().setMinimumHeight(40)
+        self.prediction_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.prediction_table.horizontalHeader().setDefaultSectionSize(150)
         self.load_prediction_table()
         layout.addWidget(self.prediction_table)
 
@@ -934,6 +998,10 @@ class ProfilePage(QWidget):
             self.user_table.setColumnCount(4)
             self.user_table.setHorizontalHeaderLabels(["用户ID", "用户名", "身份", "密码"])
             self.user_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            # 新增：设置表头属性
+            self.user_table.horizontalHeader().setMinimumHeight(40)
+            self.user_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.user_table.horizontalHeader().setDefaultSectionSize(150)
             self.load_user_table()
             layout.addWidget(self.user_table)
 
@@ -1099,6 +1167,8 @@ class PredictionPage(QWidget):
             self.auto_tracking = False
             self.auto_track_button.setText("开始自动跟踪")
             self.result_label.setText("预测结果将显示在这里")
+            # 重置模型状态以清除跟踪残留
+            self.model.reset_model()
 
     def on_upload_video(self):
         """上传视频文件"""
@@ -1132,7 +1202,7 @@ class PredictionPage(QWidget):
         self.current_frame = frame
 
         if self.auto_tracking:
-            results = self.model.model.track(frame, persist=True)
+            results = self.model.track(frame)
             detected_objects = []
             if len(results) > 0:
                 boxes = results[0].boxes
@@ -1156,16 +1226,15 @@ class PredictionPage(QWidget):
                     frame = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
 
                     detected_objects.append(f"{chinese_class_name} ({confidence:.2f})")
-            if detected_objects:
-                self.result_label.setText("检测到: " + ", ".join(detected_objects))
-            else:
-                self.result_label.setText("未检测到目标")
+                if detected_objects:
+                    self.result_label.setText("检测到: " + ", ".join(detected_objects))
+                else:
+                    self.result_label.setText("未检测到目标")
 
         height, width, channel = frame.shape
         bytes_per_line = 3 * width
         q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
         self.video_label.setPixmap(QPixmap.fromImage(q_img))
-
     def on_slider_changed(self, value):
         """滑动条改变视频帧位置"""
         if self.video_capture:
@@ -1240,8 +1309,11 @@ class PredictionPage(QWidget):
         self.video_slider.setValue(0)
         self.video_label.clear()
         self.result_label.setText("预测结果将显示在这里")
-        QMessageBox.information(self, "提示", "已清空当前内容！")
 
+        # 重置模型状态
+        self.model.reset_model()
+
+        QMessageBox.information(self, "提示", "已清空当前内容！")
     def on_feedback(self):
         """打开反馈页面"""
         self.feedback_page = FeedbackPage(self.main_window)
@@ -1275,6 +1347,7 @@ class MainWindow(QMainWindow):
 
 # 运行程序
 if __name__ == "__main__":
+    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)  # 新增：启用高DPI缩放
     app = QApplication(sys.argv)
     app.setStyleSheet(GLOBAL_STYLESHEET)
     db = Database("database.db")
