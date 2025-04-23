@@ -25,11 +25,11 @@ GLOBAL_STYLESHEET = """
     QWidget {
         background-color: #ffffff;
         font-family: 'Arial', sans-serif; /* 改用 Arial 字体，确保跨平台兼容 */
-        font-size: 16px;
+        font-size: 20px;
         color: #000000;
     }
     QLabel#contact_label {
-        font-size: 14px;
+        font-size: 25px;
         color: #444444;
         padding: 5px;
         background-color: #f8f8f8;
@@ -37,18 +37,18 @@ GLOBAL_STYLESHEET = """
     }
     
     QLabel#support_label {
-        font-size: 12px;
+        font-size: 25px;
         color: #888888;
         margin-top: 10px;
         }
         
     QLabel {
         color: #000000;
-        font-size: 16px;
+        font-size: 25px;
     }
     QLineEdit, QTextEdit, QComboBox {
         padding: 8px;
-        font-size: 16px;
+        font-size: 25px;
         border: 1px solid #cccccc;
         border-radius: 6px;
         background-color: #f9f9f9;
@@ -60,7 +60,7 @@ GLOBAL_STYLESHEET = """
     }
     QPushButton {
         padding: 10px;
-        font-size: 16px;
+        font-size: 25px;
         color: #000000;
         background-color: #e0e0e0;
         border: none;
@@ -75,7 +75,7 @@ GLOBAL_STYLESHEET = """
         background-color: #c0c0c0;
     }
     QTableWidget {
-        font-size: 16px;
+        font-size: 25px;
         border: 1px solid #cccccc;
         border-radius: 6px;
         background-color: #ffffff;
@@ -877,7 +877,7 @@ class HomePage(QWidget):
         contact_frame.setLayout(contact_layout)
 
         contact_label = QLabel("管理员联系方式: a@likaix.in")
-        contact_label.setStyleSheet("font-size: 14px; color: #666666;")
+        contact_label.setStyleSheet("font-size: 25px; color: #666666;")
         contact_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         contact_layout.addWidget(contact_label)
 
@@ -1231,7 +1231,7 @@ class PredictionPage(QWidget):
 
         self.result_label = QLabel("预测结果将显示在这里")
         self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.result_label.setStyleSheet("font-size: 16px; color: #000000;")
+        self.result_label.setStyleSheet("font-size: 25px; color: #000000;")
         right_layout.addWidget(self.result_label)
 
         self.back_button = QPushButton("返回主页")
