@@ -123,6 +123,16 @@ class Database:
             print("获取预测记录失败：", e)
             return []
 
+    def get_next_uid(self):
+        """获取下一个可用的用户ID"""
+        try:
+            self.cursor.execute("SELECT MAX(CAST(UID AS INTEGER)) FROM user")
+            max_uid = self.cursor.fetchone()[0]
+            return str(int(max_uid) + 1) if max_uid else "1"
+        except sqlite3.Error as e:
+            print("获取下一个UID失败：", e)
+            return "1"
+
     def add_prediction(self, user_id, image_path, result):
         """添加预测记录"""
         try:
@@ -532,10 +542,28 @@ class RegisterPage(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(15)
 
+        # 显示即将获得的UID
+        self.uid_label = QLabel(f"您的用户ID将是: {self.db.get_next_uid()}")
+        self.uid_label.setStyleSheet("font-size: 14px; color: #000000; font-weight: bold;")
+        layout.addWidget(self.uid_label)
+
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["Administrator", "User"])
+        self.role_combo.addItems(["User","Administrator"])
+        self.role_combo.currentTextChanged.connect(self.toggle_invite_code_field)  # 添加角色切换事件
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
+
+        # 邀请码输入框（初始隐藏）
+        self.invite_code_label = QLabel("邀请码：")
+        self.invite_code_input = QLineEdit()
+        self.invite_code_input.setPlaceholderText("请输入管理员邀请码")
+        self.invite_code_label.setVisible(False)
+        self.invite_code_input.setVisible(False)
+
+        invite_code_layout = QHBoxLayout()
+        invite_code_layout.addWidget(self.invite_code_label)
+        invite_code_layout.addWidget(self.invite_code_input)
+        layout.addLayout(invite_code_layout)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("请输入用户名")
@@ -554,22 +582,74 @@ class RegisterPage(QWidget):
 
         self.setLayout(layout)
 
+    def toggle_invite_code_field(self, role):
+        """根据选择的角色显示/隐藏邀请码输入框"""
+        if role == "Administrator":
+            self.invite_code_label.setVisible(True)
+            self.invite_code_input.setVisible(True)
+        else:
+            self.invite_code_label.setVisible(False)
+            self.invite_code_input.setVisible(False)
+
     def on_register(self):
         """用户注册逻辑"""
         identity = self.role_combo.currentText()
         name = self.name_input.text()
         password = self.password_input.text()
+        invite_code = self.invite_code_input.text() if identity == "Administrator" else ""
 
         if not name or not password:
             QMessageBox.warning(self, "注册失败", "用户名和密码不能为空！")
             return
 
+        # 检查管理员邀请码
+        if identity == "Administrator":
+            if invite_code != "walkx030724":  # 固定邀请码
+                QMessageBox.warning(self, "注册失败", "管理员邀请码不正确！")
+                return
+
         try:
-            self.db.add_user(name, identity, password)
-            QMessageBox.information(self, "注册成功", "用户注册成功！")
-            self.close()
+            assigned_uid = self.db.get_next_uid()
+
+            # 显示确认对话框
+            confirm_msg = f"您将注册为:\n\n用户ID: {assigned_uid}\n用户名: {name}\n身份: {identity}"
+            if identity == "Administrator":
+                confirm_msg += "\n(管理员账户)"
+
+            reply = QMessageBox.question(
+                self,
+                "确认注册",
+                confirm_msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self.db.add_user(name, identity, password)
+
+                # 注册成功提示框
+                msg_box = QMessageBox()
+                msg_box.setWindowTitle("注册成功")
+                msg_box.setIcon(QMessageBox.Icon.Information)
+                msg_box.setText(f"注册成功！\n\n用户ID: {assigned_uid}\n用户名: {name}\n身份: {identity}")
+
+                # 添加复制按钮
+                copy_button = msg_box.addButton("复制UID", QMessageBox.ButtonRole.ActionRole)
+                copy_button.setStyleSheet("padding: 5px;")
+                msg_box.addButton(QMessageBox.StandardButton.Ok)
+
+                msg_box.exec()
+
+                # 处理复制按钮点击
+                if msg_box.clickedButton() == copy_button:
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(assigned_uid)
+                    QMessageBox.information(self, "已复制", "用户ID已复制到剪贴板！")
+
+                self.close()
+
         except Exception as e:
             print("注册出错：", e)
+            QMessageBox.critical(self, "注册错误", f"注册过程中发生错误: {str(e)}")
 
 # 反馈页面
 class FeedbackPage(QWidget):
@@ -1347,7 +1427,7 @@ class MainWindow(QMainWindow):
 
 # 运行程序
 if __name__ == "__main__":
-    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)  # 新增：启用高DPI缩放
+    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)  # 启用高DPI缩放
     app = QApplication(sys.argv)
     app.setStyleSheet(GLOBAL_STYLESHEET)
     db = Database("database.db")
