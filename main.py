@@ -20,11 +20,11 @@ load_dotenv()
 # 获取模型路径
 MODEL_PATH = os.getenv("MODEL_PATH", "./best.pt")
 
-# 全局样式表（已修改，优化表头显示）
+# 全局样式表
 GLOBAL_STYLESHEET = """
     QWidget {
         background-color: #ffffff;
-        font-family: 'Arial', sans-serif; /* 改用 Arial 字体，确保跨平台兼容 */
+        font-family: 'Arial', sans-serif;
         font-size: 20px;
         color: #000000;
     }
@@ -35,13 +35,11 @@ GLOBAL_STYLESHEET = """
         background-color: #f8f8f8;
         border-radius: 4px;
     }
-    
     QLabel#support_label {
         font-size: 25px;
         color: #888888;
         margin-top: 10px;
-        }
-        
+    }
     QLabel {
         color: #000000;
         font-size: 25px;
@@ -95,26 +93,79 @@ GLOBAL_STYLESHEET = """
     }
     QHeaderView::section {
         background-color: #f0f0f0;
-        padding: 4px; /* 减少内边距 */
+        padding: 4px;
         border: 1px solid #e0e0e0;
-        font-size: 14px; /* 表头字体稍小 */
-        min-height: 40px; /* 增加表头高度 */
-        text-align: center; /* 文字居中对齐 */
+        font-size: 14px;
+        min-height: 40px;
+        text-align: center;
     }
 """
 
 
 # 数据库操作类
 class Database:
-
     def __init__(self, db_name):
-        """初始化数据库连接"""
+        """初始化数据库连接并创建所有必要的表"""
         try:
             self.conn = sqlite3.connect(db_name)
             self.cursor = self.conn.cursor()
-            print("数据库连接成功")
+
+            # 创建用户表（仅限普通用户）
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user (
+                    UID TEXT PRIMARY KEY,
+                    UNAME TEXT,
+                    UIDENTITY TEXT,
+                    UPD TEXT,
+                    EMAIL TEXT
+                )
+            """)
+
+            # 创建管理员表
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS admin (
+                    AID TEXT PRIMARY KEY,
+                    ANAME TEXT,
+                    APD TEXT,
+                    EMAIL TEXT
+                )
+            """)
+
+            # 创建预测记录表
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS prediction (
+                    PREDICTID TEXT PRIMARY KEY,
+                    USERID TEXT,
+                    IMAGEPATH TEXT,
+                    RESULT TEXT,
+                    PREDICTTIME TEXT
+                )
+            """)
+
+            # 创建反馈表
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS serve (
+                    SERVEID TEXT PRIMARY KEY,
+                    USERID TEXT,
+                    FEEDBACK TEXT,
+                    SERVETIME TEXT,
+                    FINISH BOOLEAN
+                )
+            """)
+
+            # 创建公告表
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notice (
+                    NOTICE TEXT,
+                    OPRATORID TEXT,
+                    TIME TEXT
+                )
+            """)
+
+            self.conn.commit()
+            print("数据库连接成功，所有表已创建")
         except sqlite3.Error as e:
-            print("数据库连接失败：", e)
+            print("数据库连接或表创建失败：", e)
 
     def get_all_predictions(self):
         """获取所有预测记录"""
@@ -126,14 +177,34 @@ class Database:
             return []
 
     def get_next_uid(self):
-        """获取下一个可用的用户ID"""
+        """获取下一个可用的用户ID，从1001开始自增"""
         try:
             self.cursor.execute("SELECT MAX(CAST(UID AS INTEGER)) FROM user")
             max_uid = self.cursor.fetchone()[0]
-            return str(int(max_uid) + 1) if max_uid else "1"
+            if max_uid is None:
+                return "1001"  # 如果表为空，从1001开始
+            next_uid = int(max_uid) + 1
+            if next_uid < 1001:
+                return "1001"  # 确保最小ID为1001
+            return str(next_uid)
         except sqlite3.Error as e:
             print("获取下一个UID失败：", e)
-            return "1"
+            return "1001"  # 默认返回1001以确保系统继续运行
+
+    def get_next_aid(self):
+        """获取下一个可用的管理员ID，从1001开始自增"""
+        try:
+            self.cursor.execute("SELECT MAX(CAST(AID AS INTEGER)) FROM admin")
+            max_aid = self.cursor.fetchone()[0]
+            if max_aid is None:
+                return "1001"  # 如果表为空，从1001开始
+            next_aid = int(max_aid) + 1
+            if next_aid < 1001:
+                return "1001"  # 确保最小ID为1001
+            return str(next_aid)
+        except sqlite3.Error as e:
+            print("获取下一个AID失败：", e)
+            return "1001"  # 默认返回1001以确保系统继续运行
 
     def add_prediction(self, user_id, image_path, result):
         """添加预测记录"""
@@ -149,10 +220,13 @@ class Database:
             print("预测记录保存失败：", e)
 
     def get_user_count(self):
-        """获取用户总数"""
+        """获取用户和管理员总数"""
         try:
             self.cursor.execute("SELECT COUNT(*) FROM user")
-            return self.cursor.fetchone()[0]
+            user_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM admin")
+            admin_count = self.cursor.fetchone()[0]
+            return user_count + admin_count
         except sqlite3.Error as e:
             print("获取用户数量失败：", e)
             return 0
@@ -223,52 +297,115 @@ class Database:
         except sqlite3.Error as e:
             print("公告更新失败：", e)
 
-    def add_user(self, name, identity, password):
-        """添加新用户"""
+    def add_user(self, name, identity, password, email):
+        """添加新用户（仅普通用户）"""
         try:
-            self.cursor.execute("INSERT INTO user (UNAME, UIDENTITY, UPD) VALUES (?, ?, ?)", (name, identity, password))
+            uid = self.get_next_uid()
+            self.cursor.execute("INSERT INTO user (UID, UNAME, UIDENTITY, UPD, EMAIL) VALUES (?, ?, ?, ?, ?)",
+                                (uid, name, identity, password, email))
             self.conn.commit()
             print("用户添加成功")
+            return uid
         except sqlite3.Error as e:
             print("用户添加失败：", e)
+            return None
+
+    def add_admin(self, name, password, email):
+        """添加新管理员"""
+        try:
+            aid = self.get_next_aid()
+            self.cursor.execute("INSERT INTO admin (AID, ANAME, APD, EMAIL) VALUES (?, ?, ?, ?)",
+                                (aid, name, password, email))
+            self.conn.commit()
+            print("管理员添加成功")
+            return aid
+        except sqlite3.Error as e:
+            print("管理员添加失败：", e)
+            return None
 
     def get_user(self, uid):
         """根据用户ID获取用户信息"""
         try:
-            self.cursor.execute("SELECT * FROM user WHERE UID = ?", (uid,))
+            self.cursor.execute("SELECT UID, UNAME, UIDENTITY, UPD, EMAIL FROM user WHERE UID = ?", (uid,))
             return self.cursor.fetchone()
         except sqlite3.Error as e:
             print("查询用户失败：", e)
             return None
 
-    def get_user_by_role_and_password(self, uid, name, identity, password):
-        """根据用户信息验证用户"""
+    def get_admin(self, aid):
+        """根据管理员ID获取管理员信息"""
         try:
-            self.cursor.execute("SELECT * FROM user WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?",
-                                (uid, name, identity, password))
+            self.cursor.execute("SELECT AID, ANAME, 'Administrator', APD, EMAIL FROM admin WHERE AID = ?", (aid,))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print("查询管理员失败：", e)
+            return None
+
+    def get_user_by_role_and_password(self, uid, name, identity, password):
+        """根据用户信息验证用户或管理员"""
+        try:
+            if identity == "Administrator":
+                self.cursor.execute(
+                    "SELECT AID, ANAME, 'Administrator', APD, EMAIL FROM admin WHERE AID = ? AND ANAME = ? AND APD = ?",
+                    (uid, name, password))
+            else:
+                self.cursor.execute(
+                    "SELECT UID, UNAME, UIDENTITY, UPD, EMAIL FROM user WHERE UID = ? AND UNAME = ? AND UIDENTITY = ? AND UPD = ?",
+                    (uid, name, identity, password))
             return self.cursor.fetchone()
         except sqlite3.Error as e:
             print("查询用户失败：", e)
             return None
 
     def get_all_users(self):
-        """获取所有用户信息"""
+        """获取所有普通用户信息"""
         try:
-            self.cursor.execute("SELECT * FROM user")
+            self.cursor.execute("SELECT UID, UNAME, UIDENTITY, UPD, EMAIL FROM user")
             return self.cursor.fetchall()
         except sqlite3.Error as e:
             print("查询所有用户失败：", e)
             return []
 
-    def update_user(self, uid, name, identity, password):
+    def get_all_admins(self):
+        """获取所有管理员信息"""
+        try:
+            self.cursor.execute("SELECT AID, ANAME, 'Administrator', APD, EMAIL FROM admin")
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print("查询所有管理员失败：", e)
+            return []
+
+    def get_users_by_role(self, role):
+        """根据角色获取用户信息"""
+        try:
+            if role == "Administrator":
+                self.cursor.execute("SELECT AID, ANAME, 'Administrator', APD, EMAIL FROM admin")
+            else:
+                self.cursor.execute("SELECT UID, UNAME, UIDENTITY, UPD, EMAIL FROM user WHERE UIDENTITY = ?", (role,))
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"查询{role}用户失败：", e)
+            return []
+
+    def update_user(self, uid, name, identity, password, email):
         """更新用户信息"""
         try:
-            self.cursor.execute("UPDATE user SET UNAME = ?, UIDENTITY = ?, UPD = ? WHERE UID = ?",
-                                (name, identity, password, uid))
+            self.cursor.execute("UPDATE user SET UNAME = ?, UIDENTITY = ?, UPD = ?, EMAIL = ? WHERE UID = ?",
+                                (name, identity, password, email, uid))
             self.conn.commit()
             print("用户信息更新成功")
         except sqlite3.Error as e:
             print("用户信息更新失败：", e)
+
+    def update_admin(self, aid, name, password, email):
+        """更新管理员信息"""
+        try:
+            self.cursor.execute("UPDATE admin SET ANAME = ?, APD = ?, EMAIL = ? WHERE AID = ?",
+                                (name, password, email, aid))
+            self.conn.commit()
+            print("管理员信息更新成功")
+        except sqlite3.Error as e:
+            print("管理员信息更新失败：", e)
 
     def close(self):
         """关闭数据库连接"""
@@ -276,7 +413,7 @@ class Database:
         print("数据库连接关闭")
 
 
-# YOLOv11 模型类
+# YOLOv11 模型类（未修改）
 class YOLOModel:
     def __init__(self, model_path):
         """初始化YOLO模型"""
@@ -409,9 +546,7 @@ class YOLOModel:
 
     def predict(self, image_path):
         """对图片进行预测，确保禁用跟踪"""
-        # 强制重置模型以清除跟踪状态
         self.reset_model()
-        # 明确禁用跟踪模式
         results = self.model.predict(source=image_path, conf=0.1, save=True, show=False, stream=False)
         if len(results) > 0:
             boxes = results[0].boxes
@@ -432,9 +567,7 @@ class YOLOModel:
 
     def reset_model(self):
         """重置模型以清除所有跟踪状态"""
-        # 重新初始化模型以确保干净状态
         self.model = YOLO(self.model_path)
-        # 显式清除跟踪器（如果适用）
         if hasattr(self.model, 'trackers'):
             self.model.trackers = None
         print("模型状态已重置")
@@ -502,7 +635,7 @@ class LoginPage(QWidget):
 
     def on_guest_login(self):
         """游客登录逻辑"""
-        self.main_window.current_user = ("guest", "Guest", "Guest", "")
+        self.main_window.current_user = ("guest", "Guest", "Guest", "", "guest@example.com")
         self.main_window.open_home_page()
         self.close()
 
@@ -513,8 +646,8 @@ class LoginPage(QWidget):
         password = self.password_input.text()
         identity = self.role_combo.currentText()
 
-        if not uid or not password:
-            QMessageBox.warning(self, "登录失败", "UID 或密码不能为空！")
+        if not uid or not name or not password:
+            QMessageBox.warning(self, "登录失败", "用户ID、用户名或密码不能为空！")
             return
 
         try:
@@ -525,9 +658,10 @@ class LoginPage(QWidget):
                 self.main_window.open_home_page()
                 self.close()
             else:
-                QMessageBox.warning(self, "登录失败", "UID 或密码错误！")
+                QMessageBox.warning(self, "登录失败", "用户ID、用户名、身份或密码错误！")
         except Exception as e:
             print("登录出错：", e)
+            QMessageBox.critical(self, "登录错误", f"登录失败：{str(e)}")
 
     def on_register(self):
         """打开注册页面"""
@@ -548,18 +682,22 @@ class RegisterPage(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(15)
 
-        # 显示即将获得的UID
-        self.uid_label = QLabel(f"您的用户ID将是: {self.db.get_next_uid()}")
-        self.uid_label.setStyleSheet("font-size: 14px; color: #000000; font-weight: bold;")
-        layout.addWidget(self.uid_label)
-
         self.role_combo = QComboBox()
         self.role_combo.addItems(["User", "Administrator"])
-        self.role_combo.currentTextChanged.connect(self.toggle_invite_code_field)  # 添加角色切换事件
+        self.role_combo.currentTextChanged.connect(self.toggle_invite_code_field)
         layout.addWidget(QLabel("选择身份："))
         layout.addWidget(self.role_combo)
 
-        # 邀请码输入框（初始隐藏）
+        self.uid_label = QLabel(f"您的用户ID将是: {self.db.get_next_uid()}")
+        self.uid_label.setStyleSheet("font-size: 14px; color: #000000; font-weight: bold;")
+        self.uid_label.setVisible(self.role_combo.currentText() == "User")
+        layout.addWidget(self.uid_label)
+
+        self.aid_label = QLabel(f"您的管理员ID将是: {self.db.get_next_aid()}")
+        self.aid_label.setStyleSheet("font-size: 14px; color: #000000; font-weight: bold;")
+        self.aid_label.setVisible(self.role_combo.currentText() == "Administrator")
+        layout.addWidget(self.aid_label)
+
         self.invite_code_label = QLabel("邀请码：")
         self.invite_code_input = QLineEdit()
         self.invite_code_input.setPlaceholderText("请输入管理员邀请码")
@@ -576,6 +714,11 @@ class RegisterPage(QWidget):
         layout.addWidget(QLabel("用户名称："))
         layout.addWidget(self.name_input)
 
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("请输入邮箱")
+        layout.addWidget(QLabel("邮箱："))
+        layout.addWidget(self.email_input)
+
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("请输入密码")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -589,68 +732,66 @@ class RegisterPage(QWidget):
         self.setLayout(layout)
 
     def toggle_invite_code_field(self, role):
-        """根据选择的角色显示/隐藏邀请码输入框"""
-        if role == "Administrator":
-            self.invite_code_label.setVisible(True)
-            self.invite_code_input.setVisible(True)
-        else:
-            self.invite_code_label.setVisible(False)
-            self.invite_code_input.setVisible(False)
+        """根据选择的角色显示/隐藏邀请码输入框和ID标签"""
+        self.invite_code_label.setVisible(role == "Administrator")
+        self.invite_code_input.setVisible(role == "Administrator")
+        self.uid_label.setVisible(role == "User")
+        self.aid_label.setVisible(role == "Administrator")
+        self.uid_label.setText(f"您的用户ID将是: {self.db.get_next_uid()}")
+        self.aid_label.setText(f"您的管理员ID将是: {self.db.get_next_aid()}")
 
     def on_register(self):
         """用户注册逻辑"""
         identity = self.role_combo.currentText()
         name = self.name_input.text()
+        email = self.email_input.text()
         password = self.password_input.text()
         invite_code = self.invite_code_input.text() if identity == "Administrator" else ""
 
-        if not name or not password:
-            QMessageBox.warning(self, "注册失败", "用户名和密码不能为空！")
+        if not name or not password or not email:
+            QMessageBox.warning(self, "注册失败", "用户名、密码和邮箱不能为空！")
             return
 
-        # 检查管理员邀请码
-        if identity == "Administrator":
-            if invite_code != "walkx030724":  # 固定邀请码
-                QMessageBox.warning(self, "注册失败", "管理员邀请码不正确！")
-                return
+        if "@" not in email or "." not in email:
+            QMessageBox.warning(self, "注册失败", "请输入有效的邮箱地址！")
+            return
+
+        if identity == "Administrator" and invite_code != "walkx030724":
+            QMessageBox.warning(self, "注册失败", "管理员邀请码不正确！")
+            return
 
         try:
-            assigned_uid = self.db.get_next_uid()
-
-            # 显示确认对话框
-            confirm_msg = f"您将注册为:\n\n用户ID: {assigned_uid}\n用户名: {name}\n身份: {identity}"
             if identity == "Administrator":
-                confirm_msg += "\n(管理员账户)"
+                assigned_id = self.db.add_admin(name, password, email)
+                id_label = "管理员ID"
+            else:
+                assigned_id = self.db.add_user(name, identity, password, email)
+                id_label = "用户ID"
 
+            if assigned_id is None:
+                raise Exception("ID分配失败")
+
+            confirm_msg = f"您将注册为:\n\n{id_label}: {assigned_id}\n用户名: {name}\n邮箱: {email}\n身份: {identity}"
             reply = QMessageBox.question(
-                self,
-                "确认注册",
-                confirm_msg,
+                self, "确认注册", confirm_msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                self.db.add_user(name, identity, password)
-
-                # 注册成功提示框
                 msg_box = QMessageBox()
                 msg_box.setWindowTitle("注册成功")
                 msg_box.setIcon(QMessageBox.Icon.Information)
-                msg_box.setText(f"注册成功！\n\n用户ID: {assigned_uid}\n用户名: {name}\n身份: {identity}")
-
-                # 添加复制按钮
-                copy_button = msg_box.addButton("复制UID", QMessageBox.ButtonRole.ActionRole)
+                msg_box.setText(
+                    f"注册成功！\n\n{id_label}: {assigned_id}\n用户名: {name}\n邮箱: {email}\n身份: {identity}")
+                copy_button = msg_box.addButton("复制ID", QMessageBox.ButtonRole.ActionRole)
                 copy_button.setStyleSheet("padding: 5px;")
                 msg_box.addButton(QMessageBox.StandardButton.Ok)
-
                 msg_box.exec()
 
-                # 处理复制按钮点击
                 if msg_box.clickedButton() == copy_button:
                     clipboard = QApplication.clipboard()
-                    clipboard.setText(assigned_uid)
-                    QMessageBox.information(self, "已复制", "用户ID已复制到剪贴板！")
-
+                    clipboard.setText(assigned_id)
+                    QMessageBox.information(self, "已复制", "ID已复制到剪贴板！")
                 self.close()
 
         except Exception as e:
@@ -658,7 +799,7 @@ class RegisterPage(QWidget):
             QMessageBox.critical(self, "注册错误", f"注册过程中发生错误: {str(e)}")
 
 
-# 反馈页面
+# 反馈页面（未修改）
 class FeedbackPage(QWidget):
     def __init__(self, main_window):
         """初始化反馈页面"""
@@ -674,8 +815,6 @@ class FeedbackPage(QWidget):
         contact_label = QLabel("如需紧急帮助，请联系管理员: a@likaix.in")
         contact_label.setStyleSheet("font-size: 14px; color: #FF0000;")
         layout.addWidget(contact_label)
-
-        self.feedback_input = QTextEdit()
 
         self.feedback_input = QTextEdit()
         self.feedback_input.setPlaceholderText("请输入您的反馈内容")
@@ -711,7 +850,7 @@ class FeedbackPage(QWidget):
         self.handle_feedback_page.show()
 
 
-# 处理反馈页面
+# 处理反馈页面（未修改）
 class HandleFeedbackPage(QWidget):
     def __init__(self, main_window):
         """初始化处理反馈页面"""
@@ -728,7 +867,6 @@ class HandleFeedbackPage(QWidget):
         self.feedback_table.setColumnCount(5)
         self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
         self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        # 新增：设置表头属性
         self.feedback_table.horizontalHeader().setMinimumHeight(40)
         self.feedback_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feedback_table.horizontalHeader().setDefaultSectionSize(150)
@@ -762,7 +900,7 @@ class HandleFeedbackPage(QWidget):
         self.load_feedback_table()
 
 
-# 主页
+# 主页（未修改）
 class HomePage(QWidget):
     def __init__(self, main_window):
         """初始化主页"""
@@ -928,7 +1066,7 @@ class HomePage(QWidget):
         self.close()
 
 
-# 查看反馈页面
+# 查看反馈页面（未修改）
 class ViewFeedbackPage(QWidget):
     def __init__(self, main_window):
         """初始化查看反馈页面"""
@@ -945,7 +1083,6 @@ class ViewFeedbackPage(QWidget):
         self.feedback_table.setColumnCount(5)
         self.feedback_table.setHorizontalHeaderLabels(["服务ID", "用户ID", "反馈内容", "提交时间", "处理状态"])
         self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        # 新增：设置表头属性
         self.feedback_table.horizontalHeader().setMinimumHeight(40)
         self.feedback_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feedback_table.horizontalHeader().setDefaultSectionSize(150)
@@ -977,7 +1114,7 @@ class ViewFeedbackPage(QWidget):
         self.close()
 
 
-# 预测记录页面
+# 预测记录页面（未修改）
 class PredictionRecordPage(QWidget):
     def __init__(self, main_window):
         """初始化预测记录页面"""
@@ -994,7 +1131,6 @@ class PredictionRecordPage(QWidget):
         self.prediction_table.setColumnCount(5)
         self.prediction_table.setHorizontalHeaderLabels(["预测ID", "用户ID", "图片路径", "预测结果", "预测时间"])
         self.prediction_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        # 新增：设置表头属性
         self.prediction_table.horizontalHeader().setMinimumHeight(40)
         self.prediction_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.prediction_table.horizontalHeader().setDefaultSectionSize(150)
@@ -1021,7 +1157,7 @@ class PredictionRecordPage(QWidget):
         self.close()
 
 
-# 编辑公告页面
+# 编辑公告页面（未修改）
 class EditNoticePage(QWidget):
     def __init__(self, main_window):
         """初始化编辑公告页面"""
@@ -1050,7 +1186,6 @@ class EditNoticePage(QWidget):
         operator_id = self.main_window.current_user[0]
         self.main_window.db.update_notice(notice, operator_id)
 
-        # 改为直接获取当前中央部件，而不是引用旧的home_page
         current_home_page = self.main_window.centralWidget()
         if isinstance(current_home_page, HomePage):
             current_home_page.notice_label.setText(notice)
@@ -1071,12 +1206,28 @@ class ProfilePage(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(15)
 
-        self.uid_label = QLabel(f"用户ID：{self.main_window.current_user[0]}")
+        # 仅管理员可见：ID 输入框和加载按钮（用于搜索用户ID）
+        if self.main_window.current_user[2] == "Administrator":
+            self.id_input = QLineEdit()
+            self.id_input.setPlaceholderText("请输入用户ID")
+            layout.addWidget(QLabel("目标用户ID："))
+            layout.addWidget(self.id_input)
+
+            self.load_button = QPushButton("加载用户信息")
+            self.load_button.clicked.connect(self.on_load_user)
+            layout.addWidget(self.load_button)
+
+        # 用户信息输入框
+        self.uid_label = QLabel(f"{'管理员ID' if self.main_window.current_user[2] == 'Administrator' else '用户ID'}：{self.main_window.current_user[0]}")
         layout.addWidget(self.uid_label)
 
         self.name_input = QLineEdit(self.main_window.current_user[1])
         layout.addWidget(QLabel("用户名："))
         layout.addWidget(self.name_input)
+
+        self.email_input = QLineEdit(self.main_window.current_user[4])
+        layout.addWidget(QLabel("邮箱："))
+        layout.addWidget(self.email_input)
 
         self.identity_input = QLineEdit(self.main_window.current_user[2])
         layout.addWidget(QLabel("身份："))
@@ -1091,21 +1242,27 @@ class ProfilePage(QWidget):
         self.save_button.clicked.connect(self.on_save)
         layout.addWidget(self.save_button)
 
+        # 管理员修改个人信息按钮
         if self.main_window.current_user[2] == "Administrator":
+            self.edit_self_button = QPushButton("修改我的信息")
+            self.edit_self_button.clicked.connect(self.on_edit_self)
+            layout.addWidget(self.edit_self_button)
+
+        # 用户表格（仅管理员可见）
+        if self.main_window.current_user[2] == "Administrator":
+            self.user_table_label = QLabel("用户列表")
+            self.user_table_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+            layout.addWidget(self.user_table_label)
+
             self.user_table = QTableWidget()
-            self.user_table.setColumnCount(4)
-            self.user_table.setHorizontalHeaderLabels(["用户ID", "用户名", "身份", "密码"])
+            self.user_table.setColumnCount(5)
+            self.user_table.setHorizontalHeaderLabels(["用户ID", "用户名", "身份", "密码", "邮箱"])
             self.user_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            # 新增：设置表头属性
             self.user_table.horizontalHeader().setMinimumHeight(40)
             self.user_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
             self.user_table.horizontalHeader().setDefaultSectionSize(150)
             self.load_user_table()
             layout.addWidget(self.user_table)
-
-            self.select_user_button = QPushButton("选择用户")
-            self.select_user_button.clicked.connect(self.on_select_user)
-            layout.addWidget(self.select_user_button)
 
         self.setLayout(layout)
 
@@ -1117,47 +1274,103 @@ class ProfilePage(QWidget):
             for j, item in enumerate(user):
                 self.user_table.setItem(i, j, QTableWidgetItem(str(item)))
 
-    def on_save(self):
-        """保存个人信息"""
-        uid = self.main_window.current_user[0]
-        name = self.name_input.text()
-        identity = self.identity_input.text()
-        password = self.password_input.text()
-        self.main_window.db.update_user(uid, name, identity, password)
-        QMessageBox.information(self, "保存成功", "用户信息已更新！")
-        self.close()
-
-    def on_select_user(self):
-        """选择用户进行编辑"""
-        selected_row = self.user_table.currentRow()
-        if selected_row == -1:
-            QMessageBox.warning(self, "操作失败", "请选择一个用户！")
+    def on_load_user(self):
+        """根据输入的用户ID加载用户信息（仅查询user表，仅管理员可用）"""
+        target_id = self.id_input.text().strip()
+        if not target_id:
+            QMessageBox.warning(self, "加载失败", "请输入用户ID！")
             return
 
-        selected_uid = self.user_table.item(selected_row, 0).text()
-        selected_name = self.user_table.item(selected_row, 1).text()
-        selected_identity = self.user_table.item(selected_row, 2).text()
-        selected_password = self.user_table.item(selected_row, 3).text()
+        # 仅查询用户表
+        user = self.main_window.db.get_user(target_id)
+        if user:
+            self.uid_label.setText(f"用户ID：{user[0]}")
+            self.name_input.setText(user[1])
+            self.identity_input.setText(user[2])
+            self.password_input.setText(user[3])
+            self.email_input.setText(user[4])
+            print(f"加载普通用户信息: ID={user[0]}, 名字={user[1]}, 身份={user[2]}")  # 调试输出
+        else:
+            QMessageBox.warning(self, "加载失败", "用户ID不存在！")
 
-        self.uid_label.setText(f"用户ID：{selected_uid}")
-        self.name_input.setText(selected_name)
-        self.identity_input.setText(selected_identity)
-        self.password_input.setText(selected_password)
+    def on_edit_self(self):
+        """加载当前管理员自己的信息进行编辑（仅管理员可用）"""
+        admin = self.main_window.db.get_admin(self.main_window.current_user[0])
+        if admin:
+            self.uid_label.setText(f"管理员ID：{admin[0]}")
+            self.name_input.setText(admin[1])
+            self.identity_input.setText("Administrator")
+            self.password_input.setText(admin[3])
+            self.email_input.setText(admin[4])
+            self.id_input.clear()  # 清空目标ID输入框
+            print(f"加载当前管理员信息: ID={admin[0]}, 名字={admin[1]}, 身份=Administrator")  # 调试输出
+        else:
+            QMessageBox.critical(self, "错误", "无法加载管理员信息！")
 
-        self.save_button.disconnect()
-        self.save_button.clicked.connect(lambda: self.on_save_selected_user(selected_uid))
-
-    def on_save_selected_user(self, uid):
-        """保存选定用户的修改"""
+    def on_save(self):
+        """保存用户信息"""
+        target_id = self.id_input.text().strip() if hasattr(self, 'id_input') else ""
         name = self.name_input.text()
+        email = self.email_input.text()
         identity = self.identity_input.text()
         password = self.password_input.text()
-        self.main_window.db.update_user(uid, name, identity, password)
-        QMessageBox.information(self, "保存成功", "用户信息已更新！")
-        self.load_user_table()
 
+        if not email or "@" not in email or "." not in email:
+            QMessageBox.warning(self, "保存失败", "请输入有效的邮箱地址！")
+            return
 
-# 预测页面
+        if not name or not password:
+            QMessageBox.warning(self, "保存失败", "用户名和密码不能为空！")
+            return
+
+        try:
+            if target_id and self.main_window.current_user[2] == "Administrator":
+                # 管理员保存普通用户信息（仅限user表）
+                user = self.main_window.db.get_user(target_id)
+                if user:
+                    self.main_window.db.update_user(target_id, name, identity, password, email)
+                    QMessageBox.information(self, "保存成功", f"用户 {target_id} 信息已更新！")
+                    print(f"更新普通用户信息: ID={target_id}, 名字={name}, 身份={identity}")  # 调试输出
+                else:
+                    QMessageBox.warning(self, "保存失败", "用户ID不存在！")
+                    return
+            else:
+                # 保存当前用户信息（管理员或普通用户）
+                current_id = self.main_window.current_user[0]
+                if self.main_window.current_user[2] == "Administrator":
+                    # 管理员保存自己的信息（admin表）
+                    self.main_window.db.update_admin(current_id, name, password, email)
+                    self.main_window.current_user = (current_id, name, "Administrator", password, email)
+                    QMessageBox.information(self, "保存成功", f"管理员 {current_id} 信息已更新！")
+                    print(f"更新当前管理员信息: ID={current_id}, 名字={name}, 身份=Administrator")  # 调试输出
+                else:
+                    # 普通用户保存自己的信息（user表）
+                    self.main_window.db.update_user(current_id, name, identity, password, email)
+                    self.main_window.current_user = (current_id, name, identity, password, email)
+                    QMessageBox.information(self, "保存成功", f"用户 {current_id} 信息已更新！")
+                    print(f"更新普通用户信息: ID={current_id}, 名字={name}, 身份={identity}")  # 调试输出
+
+            # 刷新用户表格（仅管理员）
+            if self.main_window.current_user[2] == "Administrator":
+                self.load_user_table()
+
+            # 恢复输入框为当前用户信息
+            if hasattr(self, 'id_input'):
+                self.id_input.clear()
+            self.uid_label.setText(f"{'管理员ID' if self.main_window.current_user[2] == 'Administrator' else '用户ID'}：{self.main_window.current_user[0]}")
+            self.name_input.setText(self.main_window.current_user[1])
+            self.identity_input.setText(self.main_window.current_user[2])
+            self.password_input.setText(self.main_window.current_user[3])
+            self.email_input.setText(self.main_window.current_user[4])
+
+            # 确保界面刷新
+            self.update()
+
+        except Exception as e:
+            print("保存出错：", e)
+            QMessageBox.critical(self, "保存错误", f"保存失败：{str(e)}")
+
+# 预测页面（未修改）
 class PredictionPage(QWidget):
     def __init__(self, main_window):
         """初始化预测页面"""
@@ -1266,7 +1479,6 @@ class PredictionPage(QWidget):
             self.auto_tracking = False
             self.auto_track_button.setText("开始自动跟踪")
             self.result_label.setText("预测结果将显示在这里")
-            # 重置模型状态以清除跟踪残留
             self.model.reset_model()
 
     def on_upload_video(self):
@@ -1320,7 +1532,7 @@ class PredictionPage(QWidget):
                         font = ImageFont.truetype("SimHei.ttf", 24)
                     except:
                         font = ImageFont.load_default()
-                    label = f"{class_name} {confidence:.2f}"  # 视频中的标签为英文
+                    label = f"{class_name} {confidence:.2f}"
                     draw.text((x1, y1 - 30), label, font=font, fill=(0, 255, 0, 255))
                     frame = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
 
@@ -1409,10 +1621,7 @@ class PredictionPage(QWidget):
         self.video_slider.setValue(0)
         self.video_label.clear()
         self.result_label.setText("预测结果将显示在这里")
-
-        # 重置模型状态
         self.model.reset_model()
-
         QMessageBox.information(self, "提示", "已清空当前内容！")
 
     def on_feedback(self):
@@ -1424,12 +1633,12 @@ class PredictionPage(QWidget):
         if self.video_capture:
             self.video_capture.release()
         if hasattr(self.model, 'trackers'):
-            self.model.reset_model()  # 清理模型跟踪状态
-        self.main_window.open_home_page()  # 通过主窗口方法返回，确保主页复用
+            self.model.reset_model()
+        self.main_window.open_home_page()
         self.close()
 
 
-# 主窗口
+# 主窗口（未修改）
 class MainWindow(QMainWindow):
     def __init__(self, db):
         """初始化主窗口"""
@@ -1451,7 +1660,6 @@ class MainWindow(QMainWindow):
 
 # 运行程序
 if __name__ == "__main__":
-    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)  # 启用高DPI缩放
     app = QApplication(sys.argv)
     app.setStyleSheet(GLOBAL_STYLESHEET)
     db = Database("database.db")
